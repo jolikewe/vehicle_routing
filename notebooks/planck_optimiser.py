@@ -3,12 +3,15 @@ import pandas
 from ortools.sat.python import cp_model
 
 class Model(cp_model.CpModel):
+    """CP-SAT model of the two-stage (beta: start->holding, alpha: holding->destination)
+    personnel transport scheduling problem. Variables, constraints and routes are
+    built step by step through the generate_* methods."""
+
     def __init__(self, params:dict):
         super().__init__()
         self.num_personnel = params['num_personnel']
         self.max_trips = params['max_trips']
         self.num_points_start = params['num_points_start']
-        self.points_holding = params['num_points_holding']
         self.num_points_destination = params['num_points_destination']
         self.points_start = []
         self.points_holding = []
