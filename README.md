@@ -2,6 +2,8 @@
 
 Constraint-programming models (Google OR-Tools CP-SAT) for scheduling personnel and vehicles through a two-stage transport system.
 
+**[▶ Live demo](https://jolikewe.github.io/vehicle_routing/)**: watch the optimal schedule animate, vehicle by vehicle.
+
 ![Python](https://img.shields.io/badge/python-3-blue) ![OR-Tools](https://img.shields.io/badge/OR--Tools-CP--SAT-green)
 
 ## Overview
