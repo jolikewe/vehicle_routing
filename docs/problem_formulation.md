@@ -4,11 +4,11 @@ take note:
 * parameter trip r belongs to a vehicle. for a node, vehicle Va1 might make 3 trips to it whereas Va2 only makes 1
 * created a waiting time variable unique to each vehicle/trip, limited it to [0, 30] because without this, there will be many solutions
 
-current problems:
+current problems (status after the extensions described in [Amendments](#amendments)):
 * dell proj laptop cpu processing speed too slow
-* unable to determine value of max_trips at the start, can give an estimate, but too high a value increases computational time exponentially
-* cannot include max/min function in objective function, so right now is total arrival time
-* unable to constraint launch-off nodes of alpha/beta vehicles from destination/start points, but not a concern if we assume the vehicles are ready at their respective locations
+* unable to determine value of max_trips at the start, can give an estimate, but too high a value increases computational time exponentially (still open)
+* ~~cannot include max/min function in objective function, so right now is total arrival time~~ solved: `set_objective('makespan' | 'wait' | 'mix')` in `planck_optimiser.py`
+* ~~unable to constraint launch-off nodes of alpha/beta vehicles~~ optional `generate_launch_constraint`; the default is still "free", as before
 <br>
 
 
@@ -346,3 +346,33 @@ A neighbouring solution can be defined as one that can be obtained from the curr
 # Clarifications
 1. Are the holding points considerably close to the near banks? Is it one holding point per near bank?
 2. Is there a hard constraint on the maximum waiting time? This allows us to decide between setting it as an objective or constraint. (set as 10 mins - sai song)
+
+
+# Amendments
+<a id="amendments"></a>
+Changes made on top of the original model. Everything is added as new methods in `notebooks/planck_optimiser.py`; the original methods and `multi_multi.ipynb` are untouched, so the original run (sum of arrival times, 18 personnel, 3 trips, capacity 3) still gives **531**.
+
+| Method | What it does | Why |
+| --- | --- | --- |
+| `set_objective(kind, weight)` | `'sum'` (original), `'makespan'`, `'wait'`, `'mix'` | The formulation asks for f1 (last arrival) and f2 (average wait at holding). The old note said a max cannot be minimised; it can, by adding a variable `makespan >= arrival` for every person and minimising it. |
+| `generate_hub_wait_variables(max_wait)` | `wait_p[n]` = boat departure from the holding point minus arrival at it | Needed for f2. Arrival times are only lower-bounded in the model, so minimising waiting lets a bus be held back, as the formulation intends. `max_wait` adds the hard cap that the clarifications section asks about (not enabled by default). |
+| `mix` objective | `makespan + weight * average wait` (weight scaled to an integer, 0.01 resolution) | f = f1 + lambda f2. `set_objective` returns a function that converts the solver value back to minutes. |
+| `generate_launch_constraint({'Vb1': 'S1', ...})` | Fixes where each vehicle starts its first trip | Optional answer to the "launch-off nodes" limitation. Default behaviour (free first node) is unchanged. |
+| `tighten_horizon()` | Bounds all arrival times by `4 * max_trips * (loading + longest route)` instead of 10000 | Valid for earliest-time schedules, so the optimum cannot change. |
+| `add_symmetry_breaking(person_classes)` | Orders identical vehicles by number of trips and identical people by arrival time | Removes equivalent solutions without changing the optimum. |
+
+## Verified results
+Instance: `multi_multi.ipynb` (18 personnel, 2 pickups, 3 holding points, 2 destinations, 2 + 2 vehicles, 3 trips, capacity 3, routes from `generate_route(seed=8)`, each person pre-assigned to holding point n mod 3 as in the notebook). CP-SAT on a 2-core machine, 8 workers.
+
+| Objective | CP-SAT result | Time |
+| --- | --- | --- |
+| Sum of arrival times (original) | 531, optimal | 17 to 30 s |
+| Last arrival | 43, optimal | 1.5 s |
+| Average wait at holding | 0, optimal (a bus can always be held back) | 1.2 s |
+| Last arrival + 0.5 x average wait | 43.33, optimal | 4.9 s |
+
+Speed-ups: `tighten_horizon()` gave the same optimum in about 23 s and `add_symmetry_breaking()` in 38 to 56 s, so on this instance **neither is faster** and both are left off by default. They are kept as options because they cannot change optimal values, and may help on other instances.
+
+With the holding point left free (the constraint `node_p[n, H[n % 3]] == 1` removed), CP-SAT did not finish: after 400 s it held 495 for the sum with a lower bound of 281; for last arrival it held 41 (bound 16) after 200 s.
+
+A separate local-search solver written in JavaScript (simulated annealing over trip assignments, in the [demo page](https://jolikewe.github.io/vehicle_routing/)) reproduces all four optimal values above in 20 of 20 runs of 3 s each, and finds 492 for the free-holding-point sum. Its schedule calculator scores the CP-SAT optimal schedule as exactly 531.

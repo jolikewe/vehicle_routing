@@ -2,7 +2,7 @@
 
 Constraint-programming models (Google OR-Tools CP-SAT) for scheduling personnel and vehicles through a two-stage transport system.
 
-**[▶ Live demo](https://jolikewe.github.io/vehicle_routing/)**: watch the optimal schedule animate, vehicle by vehicle.
+**[▶ Live demo](https://jolikewe.github.io/vehicle_routing/)**: change the problem (people, vehicles, seats, travel times, objective) and watch a planner in your browser build the schedule live, then compare it with the CP-SAT optimum of 531.
 
 ![Python](https://img.shields.io/badge/python-3-blue) ![OR-Tools](https://img.shields.io/badge/OR--Tools-CP--SAT-green)
 
@@ -52,8 +52,18 @@ Run `multi_multi.ipynb` for the full model. It imports `planck_optimiser.py`, so
 
 The pickles in `models/` were written with a specific OR-Tools version and may not load with a newer one; they are commented out in the notebook and are only kept as saved results.
 
+## Model extensions
+
+`notebooks/planck_optimiser.py` has extra methods (the original ones are unchanged and `multi_multi.ipynb` still gives 531):
+
+- `set_objective('makespan' | 'wait' | 'mix')` adds the formulation's other objectives: last arrival, average wait at the holding point, and `last arrival + weight * average wait`. Verified on the 18-person instance: 43, 0 and 43.33, all proven optimal.
+- Optional `generate_launch_constraint`, `tighten_horizon`, `add_symmetry_breaking` and a `max_wait` cap. The last two speed-up options did not make the 18-person sum solve faster in tests, so they are off by default.
+
+What changed, why, and the measured results are in [docs/problem_formulation.md](docs/problem_formulation.md#amendments).
+
 ## Limitations
 
 - The maximum number of trips per vehicle must be fixed in advance; large values increase solve time sharply.
-- The objective is the sum of arrival times, because CP-SAT cannot minimise a max/min of variables directly.
-- The average waiting-time objective described in the formulation is not implemented in the notebooks.
+- The notebooks still minimise the sum of arrival times; the other objectives are available through `set_objective` but are not used in the stored notebook runs.
+- Average waiting time alone is trivial to drive to zero (hold the buses back), so it is best used in the weighted mix.
+- With the holding point left free, the 18-person sum was not solved to optimality by CP-SAT within 400 s.

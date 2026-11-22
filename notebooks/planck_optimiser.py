@@ -410,3 +410,100 @@ class Model(cp_model.CpModel):
                 for var in trips:
                     temp_var = (v, r+1, var[2], var[3])
                     self.Add(self.var_q[temp_var] <= self.var_q[var])
+
+    #### Extensions (added later; the original model above is unchanged and still gives the same results) ####
+    ## Call these after the constraints above. For the original behaviour, just keep using
+    ## model.Minimize(sum of arrival_p over destinations) as in multi_multi.ipynb.
+
+    def default_horizon(self):
+        """A safe upper bound on any arrival time in an earliest-time schedule: each trip is two legs of at most
+        (loading + longest route), a bus chain takes at most max_trips trips, and the boats can only start after
+        the last person reaches a holding point, so the total is at most 4 * max_trips * (loading + longest route)."""
+        longest = 0
+        for s in self.points_start:
+            for h in self.points_holding:
+                longest = max(longest, int(self.routes.loc[s, h]))
+        for h in self.points_holding:
+            for d in self.points_destination:
+                longest = max(longest, int(self.routes.loc[h, d]))
+        return 4 * self.max_trips * (self.loading_time + longest)
+
+    def tighten_horizon(self, horizon=None):
+        """Replace the loose [0, 10000] domain of every arrival time by [0, horizon]. Does not change the optimum."""
+        horizon = horizon or self.default_horizon()
+        self.horizon = horizon
+        for var in list(self.arrival_v.values()) + list(self.arrival_p.values()):
+            self.Add(var <= horizon)
+
+    def add_symmetry_breaking(self, person_classes=None):
+        """Remove equivalent solutions without changing the optimal value.
+        1. Vehicles of one fleet are identical, so use them in order: vehicle k never makes fewer trips than vehicle k+1.
+        2. person_classes: list of lists of personnel that share the same start, holding and destination
+           (e.g. in multi_multi.ipynb persons n, n+3, n+6 ... of the same half). Identical people can be swapped,
+           so force their destination arrival times to be non-decreasing in index order."""
+        for fleet in (self.vehicles_alpha, self.vehicles_beta):
+            used = {}
+            for v in fleet:
+                used[v] = sum(self.node_v[k] for k in self.node_v if k[0] == v and k[2] in self.points_holding)
+            for a, b in zip(fleet[:-1], fleet[1:]):
+                self.Add(used[a] >= used[b])
+        for group in (person_classes or []):
+            for n, m in zip(group[:-1], group[1:]):
+                self.Add(sum(self.arrival_p[(n, i)] for i in self.points_destination)
+                         <= sum(self.arrival_p[(m, i)] for i in self.points_destination))
+
+    def generate_launch_constraint(self, start_nodes):
+        """Optional: fix where each vehicle begins its first trip, e.g. {'Vb1': 'S1', 'Va1': 'D2'}.
+        Without it the first launch node is free (the documented limitation); other vehicles stay free."""
+        for v, node in start_nodes.items():
+            var_map = self.var_p if v in self.vehicles_alpha else self.var_q
+            home = self.points_destination if v in self.vehicles_alpha else self.points_start
+            for i in home:
+                if i != node:
+                    self.Add(sum(var_map[k] for k in var_map if k[0] == v and k[1] == 0 and k[2] == i) == 0)
+
+    def generate_hub_wait_variables(self, max_wait=None):
+        """wait_p[n] = time person n stands at the holding point = (boat departure from holding) - (arrival at holding).
+        Because the arrival times are only lower-bounded, the solver may also hold a bus back, as the formulation intends.
+        max_wait: optional hard cap on the waiting time of each person (the docs mention a 10 minute clarification)."""
+        horizon = getattr(self, 'horizon', 10000)
+        self.wait_p = {}
+        for n in range(self.num_personnel):
+            departure = 0
+            for var in self.var_x:
+                if var[0] != n:
+                    continue
+                xT = self.NewIntVar(0, horizon, 'xTw')
+                self.AddMultiplicationEquality(xT, self.var_x[var], self.arrival_v[(var[1], var[2], var[4])])
+                departure += xT - self.var_x[var] * int(self.routes.loc[var[-2:]])
+            at_holding = sum(self.arrival_p[(n, i)] for i in self.points_holding)
+            w = self.NewIntVar(0, max_wait if max_wait is not None else horizon, f'wait_{n}')
+            self.Add(w == departure - at_holding)
+            self.wait_p[n] = w
+
+    def set_objective(self, kind='sum', weight=0.5, scale=100, max_wait=None):
+        """kind: 'sum'      total arrival time (original objective)
+                 'makespan' last arrival at a destination                (f1 of the formulation, max is allowed via >=)
+                 'wait'     total waiting at holding points (average = total / N)  (f2)
+                 'mix'      makespan + weight * average wait               (f = f1 + lambda f2)
+        Returns a function turning solver.ObjectiveValue() into the natural units (minutes)."""
+        N = self.num_personnel
+        arrival = [sum(self.arrival_p[(n, i)] for i in self.points_destination) for n in range(N)]
+        if kind in ('wait', 'mix'):
+            self.generate_hub_wait_variables(max_wait)
+        if kind in ('makespan', 'mix'):
+            self.makespan = self.NewIntVar(0, getattr(self, 'horizon', 10000), 'makespan')
+            for a in arrival:
+                self.Add(self.makespan >= a)
+        if kind == 'sum':
+            self.Minimize(sum(arrival)); return lambda x: x
+        if kind == 'makespan':
+            self.Minimize(self.makespan); return lambda x: x
+        total_wait = sum(self.wait_p.values())
+        if kind == 'wait':
+            self.Minimize(total_wait); return lambda x: x / N
+        if kind == 'mix':
+            w = int(round(scale * weight))
+            self.Minimize(scale * N * self.makespan + w * total_wait)
+            return lambda x: x / (scale * N)
+        raise ValueError(kind)
