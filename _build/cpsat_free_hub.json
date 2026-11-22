@@ -1,0 +1,14 @@
+{
+ "sum": {
+  "value": 495.0,
+  "bound": 281.0,
+  "status": "FEASIBLE",
+  "secs": 400.1
+ },
+ "makespan": {
+  "value": 41.0,
+  "bound": 16.0,
+  "status": "FEASIBLE",
+  "secs": 200.1
+ }
+}

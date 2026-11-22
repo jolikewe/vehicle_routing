@@ -1,0 +1,26 @@
+{
+ "sum": {
+  "value": 531.0,
+  "bound": 531.0,
+  "status": "OPTIMAL",
+  "secs": 30.1
+ },
+ "makespan": {
+  "value": 43.0,
+  "bound": 43.0,
+  "status": "OPTIMAL",
+  "secs": 1.5
+ },
+ "wait": {
+  "value": 0.0,
+  "bound": 0.0,
+  "status": "OPTIMAL",
+  "secs": 1.2
+ },
+ "mix": {
+  "value": 43.333333333333336,
+  "bound": 43.333333333333336,
+  "status": "OPTIMAL",
+  "secs": 4.9
+ }
+}

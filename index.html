@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two-leg trip planner: who rides which vehicle, and when</title>
+<meta name="description" content="People travel from pickup points to destinations in two legs, by bus and then by boat. Change the problem and watch a planner in your browser build the schedule live, then compare it with the proven optimum from CP-SAT.">
+<meta property="og:title" content="Two-leg trip planner: who rides which vehicle, and when">
+<meta property="og:description" content="Plan buses and boats in your browser, watch the schedule improve live, and compare it with the CP-SAT optimum.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#F3F5F0">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F3F5F0; --panel:#FBFCF9; --ink:#10222F; --ink2:#46586A; --line:#D3DACF; --land:#E5EADB; --water:#D2E3EA; --water2:#BBD5E0;
+  --bus:#E39A2D; --bus-d:#8A4F06; --boat:#2F86B8; --boat-d:#17577E; --wait:#B03A5B; --ok:#1E7A57; --focus:#0B5CAD;
+  --disp:'Bricolage Grotesque','Avenir Next','Segoe UI',system-ui,sans-serif; --body:'Instrument Sans','Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.55 var(--body);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:var(--disp);line-height:1.08;margin:0;letter-spacing:-.015em}
+p{margin:0 0 .8em}
+a{color:var(--boat-d)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:4px}
+.wrap{max-width:1240px;margin:0 auto;padding:0 clamp(16px,4vw,40px)}
+.skip{position:absolute;left:-999px;top:8px;background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;z-index:20}
+.skip:focus{left:8px}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 0}
+.brand{font:700 18px var(--disp);letter-spacing:-.01em;display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink)}
+.brand svg{width:28px;height:28px}
+.btn{font:600 15px var(--body);border:1.5px solid var(--ink);background:var(--ink);color:#fff;padding:9px 16px;border-radius:999px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px;line-height:1.2}
+.btn:hover{background:#1d3a4e}
+.btn.ghost{background:transparent;color:var(--ink)}
+.btn.ghost:hover{background:#E4EAE1}
+.btn[disabled]{opacity:.45;cursor:default}
+.btn.sm{padding:6px 12px;font-size:14px}
+
+/* ---- hero ---- */
+.hero{padding:clamp(20px,4vw,48px) 0 20px;display:grid;grid-template-columns:minmax(0,1fr);gap:28px}
+.hero h1{font-size:clamp(34px,5.6vw,68px);font-weight:700;max-width:16ch}
+.story{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.25fr);gap:clamp(20px,4vw,56px);align-items:start;margin-top:22px}
+.story ol{margin:0;padding:0;list-style:none;display:grid;gap:12px;font-size:clamp(17px,1.6vw,19px);max-width:52ch}
+.story li{padding-left:0}
+.story b{font-weight:650}
+.note{font-size:14.5px;color:var(--ink2);max-width:62ch}
+.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-weight:600;font-size:.92em;line-height:1.5}
+.pill.bus{background:#F7E2BF;color:var(--bus-d)} .pill.boat{background:#CFE5F2;color:var(--boat-d)}
+
+.route{display:grid;grid-template-columns:1fr 78px 1fr 78px 1fr;align-items:stretch;border:1.5px solid var(--ink);border-radius:22px;overflow:hidden;background:var(--panel);box-shadow:6px 6px 0 var(--ink)}
+.col{padding:16px 14px;display:flex;flex-direction:column;gap:10px;justify-content:center}
+.col h3{font:650 14px var(--body);letter-spacing:0;color:var(--ink2)}
+.col.land{background:var(--land)} .col.shore{background:linear-gradient(90deg,var(--land),var(--water))} .col.sea{background:var(--water)}
+.stop{background:var(--panel);border:1.5px solid var(--ink);border-radius:12px;padding:7px 10px;font-weight:600;font-size:14.5px;line-height:1.25;display:flex;flex-direction:column}
+.stop small{font-weight:500;color:var(--ink2);font-size:12px}
+.leg{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;text-align:center;padding:0 4px;background:var(--water);}
+.leg.b{background:linear-gradient(90deg,var(--land),var(--land))}
+.leg.a{background:var(--water)}
+.track{position:relative;width:100%;height:30px}
+.track::before{content:"";position:absolute;left:4px;right:10px;top:14px;height:0;border-top:3px dashed currentColor;opacity:.55}
+.track::after{content:"";position:absolute;right:4px;top:8px;border:7px solid transparent;border-left:11px solid currentColor;border-right:0}
+.leg.b{color:var(--bus-d)} .leg.a{color:var(--boat-d)}
+.dot{position:absolute;top:9px;left:0;width:12px;height:12px;border-radius:50%;background:currentColor;animation:ride 3.2s linear infinite}
+.leg.a .dot{animation-delay:-1.1s}
+.dot:nth-child(2){animation-delay:-1s}.dot:nth-child(3){animation-delay:-2.1s}
+.leg.a .dot:nth-child(2){animation-delay:-2.2s}.leg.a .dot:nth-child(3){animation-delay:-.3s}
+@keyframes ride{0%{transform:translateX(0);opacity:0}12%{opacity:1}85%{opacity:1}100%{transform:translateX(50px);opacity:0}}
+.legend{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:8px 22px;font-size:14px;color:var(--ink2);padding:0;list-style:none}
+.legend li{display:block;line-height:1.6}
+.legend b{color:var(--ink);font-weight:600}
+code,.code{font:500 .86em ui-monospace,SFMono-Regular,Menlo,monospace;background:#E4EAE1;border-radius:6px;padding:1px 6px;white-space:nowrap}
+.decides{margin-top:18px;font:600 clamp(17px,1.8vw,20px)/1.4 var(--disp);max-width:46ch}
+
+/* ---- sections ---- */
+section{padding:clamp(40px,7vw,84px) 0 0}
+section h2{font-size:clamp(28px,3.8vw,46px);font-weight:700;max-width:22ch}
+.lede{font-size:clamp(17px,1.5vw,19px);max-width:62ch;color:var(--ink2);margin-top:14px}
+.card{background:var(--panel);border:1.5px solid var(--line);border-radius:18px}
+
+/* objective explainer */
+.obj{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:clamp(20px,3vw,44px);margin-top:28px;align-items:start}
+.tabs{display:flex;flex-direction:column;gap:8px}
+.tab{text-align:left;border:1.5px solid var(--line);background:var(--panel);border-radius:14px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;display:grid;gap:2px}
+.tab strong{font:650 17px var(--disp)}
+.tab span{font-size:14px;color:var(--ink2)}
+.tab[aria-selected=true]{border-color:var(--ink);box-shadow:4px 4px 0 var(--ink);background:#fff}
+.tabpanel p{max-width:60ch}
+.eq{font:700 clamp(22px,2.6vw,30px) var(--disp);margin:6px 0 10px}
+.chartbox{padding:14px 14px 10px;overflow-x:auto}
+.chartbox svg{display:block;width:100%;height:auto;min-width:640px}
+.keyrow{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13.5px;color:var(--ink2);margin:6px 2px 4px}
+.sw{display:inline-block;width:14px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.sw.w0{background:#C9D0C6}.sw.bus{background:var(--bus)}.sw.wait{background:var(--wait)}.sw.boat{background:var(--boat)}
+svg text{font-family:var(--body)}
+.seg.w0{fill:#D4DAD1}.seg.bus{fill:var(--bus)}.seg.wait{fill:var(--wait)}.seg.boat{fill:var(--boat)}
+.bars .row{transition:opacity .25s}
+.bars[data-mode=max] .row:not(.top){opacity:.22}
+.bars[data-mode=wait] .seg.bus,.bars[data-mode=wait] .seg.boat,.bars[data-mode=wait] .seg.w0{opacity:.22}
+.bars[data-mode=wait] .seg.wait{stroke:var(--ink);stroke-width:1}
+.bars[data-mode=mix] .row:not(.top) .seg.bus,.bars[data-mode=mix] .row:not(.top) .seg.boat{opacity:.45}
+.strip rect{stroke:var(--panel);stroke-width:1.5}
+
+/* ---- lab ---- */
+.lab{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:22px;margin-top:26px;align-items:start}
+.controls{padding:6px 16px 16px;display:grid;gap:0}
+.controls details{border-bottom:1px solid var(--line);padding:6px 0}
+.controls details:last-of-type{border:0}
+.controls summary{font:650 16px var(--disp);padding:10px 0;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.controls summary::-webkit-details-marker{display:none}
+.controls summary::after{content:"+";font:500 22px var(--body);color:var(--ink2)}
+.controls details[open] summary::after{content:"\2212"}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;padding-bottom:8px}
+.fld{display:grid;gap:3px;font-size:13.5px;color:var(--ink2);font-weight:500}
+.fld input,.fld select{font:600 16px var(--body);color:var(--ink);background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:7px 9px;width:100%;min-width:0}
+.fld input:focus-visible,.fld select:focus-visible{border-color:var(--focus)}
+.full{grid-column:1/-1}
+.chk{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;color:var(--ink);padding:2px 0 8px}
+.chk input{margin-top:4px;width:18px;height:18px;accent-color:var(--ink)}
+.mat{border-collapse:separate;border-spacing:4px;font-size:12.5px;color:var(--ink2);width:100%}
+.mat th{font-weight:600;text-align:left;padding:0 2px;white-space:nowrap}
+.mat td input{width:100%;min-width:0;font:600 15px var(--body);border:1.5px solid var(--line);border-radius:8px;padding:5px 4px;text-align:center;background:#fff}
+.radios{display:grid;gap:6px;padding-bottom:6px}
+.radios label{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:12px;padding:8px 10px;cursor:pointer;font-size:14.5px;background:#fff}
+.radios label:has(input:checked){border-color:var(--ink);box-shadow:3px 3px 0 var(--ink)}
+.radios input{margin-top:4px;accent-color:var(--ink)}
+.radios small{display:block;color:var(--ink2);font-size:12.5px;line-height:1.35}
+.runrow{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0 2px}
+.status{font-size:14px;color:var(--ink2);min-height:22px;padding-top:6px}
+.status.err{color:#9A2323;font-weight:600}
+
+.results{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;min-width:0}
+.score{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.kpi{padding:14px 16px;border-radius:16px;border:1.5px solid var(--line);background:var(--panel);min-width:0}
+.kpi .lab1{font-size:13.5px;color:var(--ink2);font-weight:500;line-height:1.3}
+.kpi .big{font:700 clamp(30px,4vw,46px)/1.05 var(--disp);margin:4px 0 2px;letter-spacing:-.02em}
+.kpi .sub{font-size:13px;color:var(--ink2)}
+.kpi.ref{border-color:var(--ok)} .kpi.ref .big{color:var(--ok)}
+.kpi.main{border-color:var(--ink);box-shadow:4px 4px 0 var(--ink)}
+.kpi .big.flash{animation:flash .6s}
+@keyframes flash{0%{color:var(--boat)}100%{color:inherit}}
+.mini{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;color:var(--ink2);padding:0 4px}
+.mini b{color:var(--ink)}
+.mini .on{color:var(--ink);font-weight:700}
+.viewsw{display:inline-flex;border:1.5px solid var(--ink);border-radius:999px;overflow:hidden}
+.viewsw label{padding:5px 12px;font-size:14px;font-weight:600;cursor:pointer}
+.viewsw input{position:absolute;opacity:0;pointer-events:none}
+.viewsw label:has(input:checked){background:var(--ink);color:#fff}
+.viewsw label:has(input:focus-visible){outline:3px solid var(--focus);outline-offset:-3px}
+.mapcard{overflow:hidden}
+.mapcard svg{display:block;width:100%;height:auto}
+.pbar{display:flex;gap:10px;align-items:center;padding:10px 14px;border-top:1.5px solid var(--line);flex-wrap:wrap}
+.pbar input[type=range]{flex:1 1 160px;accent-color:var(--ink);min-width:120px}
+.pbar select{font:600 14px var(--body);border:1.5px solid var(--line);border-radius:8px;padding:5px;background:#fff}
+.time{font:650 15px var(--body);min-width:92px}
+.pad{padding:14px 16px}
+.pad h3{font:700 18px var(--disp);margin-bottom:2px}
+.pad .hint{font-size:13.5px;color:var(--ink2);margin-bottom:8px}
+.scroll{overflow-x:auto}
+.scroll svg{display:block;min-width:640px;width:100%;height:auto}
+.emptymsg{padding:40px 20px;text-align:center;color:var(--ink2)}
+table.t{border-collapse:collapse;width:100%;font-size:14.5px}
+table.t th,table.t td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line)}
+table.t th{font-weight:650;font-size:13.5px;color:var(--ink2)}
+.tw{overflow-x:auto}
+details.more summary{cursor:pointer;font-weight:600;padding:12px 16px}
+
+/* ---- how it works ---- */
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;margin-top:26px}
+.cols .card{padding:20px 22px}
+.cols h3{font-size:21px;margin-bottom:10px}
+.cols ul{margin:0;padding-left:1.15em;display:grid;gap:7px;font-size:16px}
+.cols li::marker{color:var(--ink2)}
+.diff{margin-top:22px;padding:20px 22px}
+.diff h3{font-size:22px;margin-bottom:10px}
+.diff .note,#xnote{max-width:96ch}
+.diff ol{margin:0;padding-left:1.3em;display:grid;gap:9px;font-size:16px}
+.xtable{margin-top:22px}
+.xtable .tw{padding:2px 6px 8px}
+.num{text-align:right!important;font-variant-numeric:tabular-nums}
+td.good{color:var(--ok);font-weight:650}
+.foot{padding:56px 0 40px;margin-top:70px;border-top:1.5px solid var(--line);display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-between;align-items:center;font-size:15px;color:var(--ink2)}
+
+@media (max-width:980px){
+  .story{grid-template-columns:minmax(0,1fr)}
+  .obj{grid-template-columns:minmax(0,1fr)}
+  .tabs{flex-direction:row;overflow-x:auto;padding-bottom:4px}
+  .tab{min-width:170px}
+  .lab{grid-template-columns:minmax(0,1fr)}
+  .cols{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:700px){
+  body{font-size:16.5px}
+  .legend{grid-template-columns:1fr}
+  .route{grid-template-columns:1fr;box-shadow:4px 4px 0 var(--ink)}
+  .leg{flex-direction:row;padding:10px 12px;gap:12px;justify-content:center}
+  .leg.b{background:var(--land)}
+  .track{display:none}
+  .leg::before{content:"\2193";font:700 22px var(--body)}
+  .score{grid-template-columns:1fr 1fr}
+  .score .kpi:first-child{grid-column:1/-1}
+  .grid2{grid-template-columns:1fr 1fr}
+}
+@media (prefers-reduced-motion:reduce){
+  .dot{animation:none;opacity:1;left:calc(50% - 6px)} html{scroll-behavior:auto}
+  .kpi .big.flash{animation:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#lab">Skip to the planner</a>
+<div class="wrap">
+<header class="top">
+  <a class="brand" href="#top" aria-label="Two-leg trip planner, top of page">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#10222F"/><path d="M6 21h11" stroke="#E39A2D" stroke-width="3" stroke-linecap="round"/><path d="M17 21c3 0 4-5 9-5" stroke="#6BB5DE" stroke-width="3" stroke-linecap="round" fill="none"/><circle cx="17" cy="21" r="3" fill="#F3F5F0"/></svg>
+    vehicle_routing
+  </a>
+  <a class="btn" href="https://github.com/jolikewe/vehicle_routing" rel="noopener"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>View on GitHub</a>
+</header>
+
+<main id="top">
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <h1>Get everyone across in two legs, as early as possible.</h1>
+  <div class="story">
+    <div>
+      <ol>
+        <li>People wait at two <b>pickup points</b> and each must reach a <b>destination</b>.</li>
+        <li><span class="pill bus">Buses</span> drive them to a <b>transfer hub</b>. From there, <span class="pill boat">boats</span> carry them to their destination.</li>
+        <li>Every vehicle has a few seats and makes a few trips, so someone has to decide <b>who rides which vehicle, on which trip, and when it leaves</b>.</li>
+        <li>The goal is simple: <b>everyone arrives as early as possible</b>. Below you can change the problem and watch a planner solve it live.</li>
+      </ol>
+      <p class="note" style="margin-top:16px">The buses, boats and place names are an illustration. The repo's 18-person instance is synthetic, with travel times drawn at random, and the code calls these things by short labels (see the key).</p>
+    </div>
+    <div>
+      <div class="route" role="img" aria-label="Diagram: people at Pickup North and Pickup South ride buses to one of three transfer hubs, then ride boats to Destination Isle or Destination Cape.">
+        <div class="col land"><h3>Pickup points</h3><div class="stop">Pickup North <small>S1</small></div><div class="stop">Pickup South <small>S2</small></div></div>
+        <div class="leg b"><span>Bus leg</span><div class="track"><i class="dot"></i><i class="dot"></i><i class="dot"></i></div></div>
+        <div class="col shore"><h3>Transfer hubs</h3><div class="stop">Transfer Hub 1 <small>H1</small></div><div class="stop">Transfer Hub 2 <small>H2</small></div><div class="stop">Transfer Hub 3 <small>H3</small></div></div>
+        <div class="leg a"><span>Boat leg</span><div class="track"><i class="dot"></i><i class="dot"></i><i class="dot"></i></div></div>
+        <div class="col sea"><h3>Destinations</h3><div class="stop">Destination Isle <small>D1</small></div><div class="stop">Destination Cape <small>D2</small></div></div>
+      </div>
+      <ul class="legend" aria-label="Key to the labels used in the code">
+        <li><b>Bus 1, 2</b> <code>Vb1</code> <code>Vb2</code> (beta, land)</li>
+        <li><b>Boat 1, 2</b> <code>Va1</code> <code>Va2</code> (alpha, second leg)</li>
+        <li><b>Person 1 to 18</b> <code>0</code> to <code>17</code></li>
+        <li><b>Pickup North</b> goes to <b>Isle</b>, <b>South</b> to <b>Cape</b> (as in the notebook)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ================= OBJECTIVE ================= -->
+<section id="objective" aria-labelledby="h-obj">
+  <h2 id="h-obj">What does the number 531 mean?</h2>
+  <p class="lede">Each bar is one person's journey from time 0. It has up to four parts: waiting at the pickup, the bus ride, waiting at the hub, the boat ride. The bar ends when that person arrives. This is the optimal schedule that the repo's CP-SAT model found for its 18-person instance.</p>
+  <div class="obj">
+    <div class="tabs" role="tablist" aria-label="Ways to score a schedule">
+      <button class="tab" role="tab" id="tab-sum" aria-selected="true" aria-controls="panel-obj" data-mode="sum"><strong>Sum of arrival times</strong><span>The repo's objective: <span data-k="sum"></span></span></button>
+      <button class="tab" role="tab" id="tab-max" aria-selected="false" aria-controls="panel-obj" data-mode="max" tabindex="-1"><strong>Last arrival</strong><span>Makespan: <span data-k="mk"></span> minutes</span></button>
+      <button class="tab" role="tab" id="tab-wait" aria-selected="false" aria-controls="panel-obj" data-mode="wait" tabindex="-1"><strong>Average wait at the hub</strong><span><span data-k="aw"></span> minutes here</span></button>
+    </div>
+    <div>
+      <div class="tabpanel" id="panel-obj" role="tabpanel" aria-live="polite">
+        <div class="eq" id="obj-eq"></div>
+        <p id="obj-text"></p>
+      </div>
+      <div class="card chartbox">
+        <div class="keyrow" aria-hidden="true"><span><i class="sw w0"></i>waiting at pickup</span><span><i class="sw bus"></i>bus ride</span><span><i class="sw wait"></i>waiting at hub</span><span><i class="sw boat"></i>boat ride</span></div>
+        <svg id="exp-bars" class="bars" role="img" aria-label="One horizontal bar per person showing their journey, ending at their arrival time"></svg>
+        <svg id="exp-strip" class="strip" role="img" aria-label="All 18 arrival times laid end to end, adding up to 531 minutes"></svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= LAB ================= -->
+<section id="lab" aria-labelledby="h-lab">
+  <h2 id="h-lab">Change the problem. Watch it get solved.</h2>
+  <p class="lede">The planner runs in your browser while you watch. It starts with a quick greedy plan, then keeps trying small changes (swap two trips, reorder a vehicle, move a person) and keeps the ones that score better. Any edit restarts the search.</p>
+  <div class="lab">
+    <form class="card controls" id="controls" onsubmit="return false" aria-label="Problem settings">
+      <details open><summary>Scenario</summary>
+        <div class="runrow" style="padding-top:0">
+          <button type="button" class="btn sm" id="b-preset">Repo instance (18 people)</button>
+          <button type="button" class="btn sm ghost" id="b-rand">Randomise travel times</button>
+        </div>
+        <div class="grid2">
+          <label class="fld">People at Pickup North<input type="number" id="c-n0" min="0" max="20" inputmode="numeric"></label>
+          <label class="fld">People at Pickup South<input type="number" id="c-n1" min="0" max="20" inputmode="numeric"></label>
+          <label class="fld">Random seed<input type="number" id="c-seed" min="0" max="99999" value="8" inputmode="numeric"></label>
+          <label class="fld">Transfer hubs<input type="number" id="c-nh" min="2" max="4" inputmode="numeric"></label>
+        </div>
+        <label class="chk"><input type="checkbox" id="c-fixed"><span>Give each person a fixed hub, as in the repo notebook (person n uses hub n mod hubs). Untick to let the planner choose hubs.</span></label>
+      </details>
+      <details open><summary>Vehicles</summary>
+        <div class="grid2">
+          <label class="fld">Buses<input type="number" id="c-nb" min="1" max="4" inputmode="numeric"></label>
+          <label class="fld">Boats<input type="number" id="c-na" min="1" max="4" inputmode="numeric"></label>
+          <label class="fld">Seats per vehicle<input type="number" id="c-cap" min="1" max="8" inputmode="numeric"></label>
+          <label class="fld">Max trips per vehicle<input type="number" id="c-r" min="1" max="6" inputmode="numeric"></label>
+          <label class="fld">Loading time (min)<input type="number" id="c-l" min="0" max="5" inputmode="numeric"></label>
+        </div>
+      </details>
+      <details><summary>Travel times (minutes)</summary>
+        <p class="note" style="margin:0 0 8px">Bus time from each pickup to each hub.</p>
+        <table class="mat" id="m-sh"></table>
+        <p class="note" style="margin:10px 0 8px">Boat time from each hub to each destination.</p>
+        <table class="mat" id="m-hd"></table>
+      </details>
+      <details open><summary>What to minimise</summary>
+        <div class="radios" role="radiogroup" aria-label="Objective">
+          <label><input type="radio" name="obj" value="sum" checked><span>Sum of arrival times<small>The repo's objective. Rewards getting everyone there early.</small></span></label>
+          <label><input type="radio" name="obj" value="makespan"><span>Last arrival<small>Only the slowest person counts.</small></span></label>
+          <label><input type="radio" name="obj" value="wait"><span>Average wait at the hub<small>Time between bus arrival and boat departure.</small></span></label>
+          <label><input type="radio" name="obj" value="mix"><span>Weighted mix<small>Last arrival + weight x average hub wait.</small></span></label>
+        </div>
+        <label class="fld" id="f-lam" hidden>Weight on hub wait: <output id="o-lam">0.5</output><input type="range" id="c-lam" min="0.1" max="1" step="0.1" value="0.5"></label>
+      </details>
+      <details><summary>Search settings</summary>
+        <div class="grid2">
+          <label class="fld">Search effort<select id="c-eff"><option value="2000">Quick (2 s)</option><option value="6000" selected>Normal (6 s)</option><option value="20000">Long (20 s)</option><option value="1000000">Until I stop it</option></select></label>
+          <label class="fld">Pace<select id="c-pace"><option value="watch" selected>Slow start, so I can watch</option><option value="fast">Full speed</option></select></label>
+        </div>
+      </details>
+      <div class="runrow"><button type="button" class="btn" id="b-run">Search again</button><button type="button" class="btn ghost" id="b-stop">Stop</button></div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </form>
+
+    <div class="results">
+      <div class="score" aria-label="Scoreboard">
+        <div class="kpi main"><div class="lab1" id="k-label">Browser planner, best so far</div><div class="big" id="k-best">-</div><div class="sub" id="k-sub">&nbsp;</div></div>
+        <div class="kpi ref" id="k-refbox"><div class="lab1">CP-SAT, same instance</div><div class="big" id="k-ref">-</div><div class="sub" id="k-refsub">&nbsp;</div></div>
+        <div class="kpi"><div class="lab1">Browser vs CP-SAT</div><div class="big" id="k-gap">-</div><div class="sub" id="k-gapsub">&nbsp;</div></div>
+      </div>
+      <div class="mini" id="mini" aria-label="All three measures of the schedule shown"></div>
+
+      <div class="card mapcard">
+        <div class="pad" style="padding-bottom:6px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+          <div><h3>The schedule in motion</h3><div class="hint" style="margin:0">Circles show people waiting there now. Vehicles show riders on board.</div></div>
+          <div class="viewsw" id="viewsw" role="radiogroup" aria-label="Schedule to show" hidden>
+            <label><input type="radio" name="view" value="browser" checked>Browser best</label>
+            <label><input type="radio" name="view" value="cpsat">CP-SAT optimum</label>
+          </div>
+        </div>
+        <div id="mapwrap"><svg id="map" role="img" aria-label="Map of pickups, transfer hubs and destinations with buses and boats moving between them"></svg></div>
+        <div class="pbar">
+          <button type="button" class="btn sm" id="b-play" aria-pressed="false">Play</button>
+          <input type="range" id="scrub" min="0" max="100" step="0.1" value="0" aria-label="Time in the schedule">
+          <span class="time" id="timelab" aria-live="off">0 min</span>
+          <label style="font-size:14px">Speed <select id="speed" aria-label="Playback speed"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option><option value="4">4x</option></select></label>
+        </div>
+      </div>
+
+      <div class="card pad">
+        <h3>Objective as the search improves</h3>
+        <div class="hint">Best score found after each number of schedules tried (log scale). Lower is better.</div>
+        <svg id="conv" role="img" aria-label="Line chart of the best score found against schedules tried" style="width:100%;height:auto;display:block"></svg>
+      </div>
+
+      <div class="card pad">
+        <h3>Trip lanes</h3>
+        <div class="hint">One lane per vehicle. Solid blocks carry people (number of riders shown), pale hatched blocks are empty trips back. The line follows the playback time.</div>
+        <div class="scroll" tabindex="0" role="region" aria-label="Trip lanes, scrolls sideways on small screens"><svg id="gantt" role="img" aria-label="Timeline of each bus and boat trip"></svg></div>
+      </div>
+
+      <div class="card pad">
+        <h3>Who arrives when</h3>
+        <div class="hint" id="bars-hint">Same bars as above, for the schedule shown.</div>
+        <div class="chartbox" style="padding:0"><svg id="lab-bars" class="bars" role="img" aria-label="One bar per person for the schedule shown"></svg></div>
+      </div>
+
+      <details class="card more"><summary>Show the schedule as a table</summary>
+        <div class="tw"><table class="t" id="ptable"></table></div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= HOW ================= -->
+<section id="how" aria-labelledby="h-how">
+  <h2 id="h-how">How the browser planner works</h2>
+  <p class="lede">The planner is a heuristic: it searches for good schedules but cannot prove that none is better. Its building blocks are an exact schedule calculator and a search that tries small changes.</p>
+  <div class="cols">
+    <div class="card">
+      <h3>The schedule calculator</h3>
+      <ul>
+        <li>A schedule is just an assignment: each person gets a bus trip, a boat trip and a hub. Trips on one vehicle run in order.</li>
+        <li>Given that, every time is computed at its earliest possible value: a bus leaves its pickup, drives to the hub and drives back empty. A boat drives to the hub empty, <b>waits for its riders</b>, then carries them on.</li>
+        <li>Anything that breaks a rule (too many riders, two hubs in one trip, a boat leaving before its rider has arrived) is rejected.</li>
+        <li>Checked against CP-SAT: this calculator scores the repo's optimal schedule as exactly 531, person by person.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>The search</h3>
+      <ul>
+        <li><b>Start:</b> a greedy plan that fills each bus and boat in turn and sends every trip to the vehicle that finishes it soonest.</li>
+        <li><b>Moves:</b> swap two trips, pull a trip earlier or later in one vehicle's order, swap or move people, and (when hubs are free) change a trip's hub.</li>
+        <li><b>Accept:</b> simulated annealing. Better plans are always kept; slightly worse ones are kept with a probability that shrinks as the search cools, which lets it escape dead ends.</li>
+        <li><b>Restarts:</b> the search reheats from the best plan, and every fifth round starts from a freshly randomised greedy plan. It runs in a Web Worker so the page stays smooth.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card diff">
+    <h3>How the browser solver differs from CP-SAT</h3>
+    <p class="note">The rules are the same ones as in <code>planck_optimiser.py</code>: seats per trip, one hub per trip, vehicles start on their home side and return empty, boats only carry people already at the hub, waiting is allowed, and each person takes one bus and one boat through the same hub. The differences:</p>
+    <ol>
+      <li><b>Heuristic, not exact.</b> CP-SAT proves 531 is optimal for the repo instance. The browser planner only reports the best plan it found, and says how far it is from a proven value only when one is known.</li>
+      <li><b>Earliest times.</b> CP-SAT keeps free timing variables (each stop has a waiting variable in 0 to 30 and arrival times are only lower-bounded). The browser schedules every leg as early as the rules allow, which gives the same sum and last-arrival values. For the hub-wait objectives it also holds buses back just in time, which is what CP-SAT's slack allows.</li>
+      <li><b>No empty trips.</b> A trip with nobody on board is never planned. In CP-SAT such a trip is allowed but cannot help, and used trips must form a prefix of a vehicle's trips either way.</li>
+      <li><b>First launch point.</b> A bus's first trip starts at the pickup of its riders. A boat's first trip starts at whichever destination is closest to the hub it serves. CP-SAT leaves this free too (a documented limitation), so a vehicle effectively starts where it is most useful.</li>
+      <li><b>Pickup to destination pairing and hubs.</b> As in the notebook, Pickup North always goes to Isle and Pickup South to Cape. The notebook also fixes each person's hub; the browser keeps that when the box is ticked. With free hubs the browser can beat CP-SAT's 531 because it solves a less restricted problem, so no comparison is shown.</li>
+      <li><b>Extra objectives.</b> The notebooks only minimise the sum. The browser also offers last arrival, average hub wait and a weighted mix. The CP-SAT model in the repo was extended to match (next section).</li>
+      <li><b>Not modelled in either.</b> A cap on hub waiting (the docs mention 10 minutes) and route choice between nodes: travel times are fixed numbers.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="cpsat" aria-labelledby="h-cp">
+  <h2 id="h-cp">The CP-SAT model, extended</h2>
+  <p class="lede">The repo's model has been extended so the formulation's other objectives can be solved exactly, and with the exact answers shown next to the browser planner's. The original behaviour is untouched: the notebook still gives 531.</p>
+  <div class="card xtable">
+    <div class="tw"><table class="t" id="xtab"></table></div>
+  </div>
+  <p class="note" style="margin-top:12px" id="xnote"></p>
+</section>
+
+<!-- ================= RESULTS ================= -->
+<section id="results" aria-labelledby="h-res">
+  <h2 id="h-res">Results from the repo</h2>
+  <p class="lede">Values taken from the stored notebook outputs and the notes in <code>notebooks/multi_multi.ipynb</code>.</p>
+  <div class="card tw" style="margin-top:22px"><table class="t">
+    <thead><tr><th scope="col">Notebook / model</th><th scope="col">Setup</th><th scope="col" class="num">Objective (sum of arrival times)</th></tr></thead>
+    <tbody>
+      <tr><td><code>single_vehicle_cpsat.ipynb</code></td><td>5 personnel, 1 alpha + 1 beta vehicle</td><td class="num">68</td></tr>
+      <tr><td><code>multi_vehicle.ipynb</code></td><td>5 personnel, 1 alpha + 2 beta vehicles</td><td class="num">34</td></tr>
+      <tr><td><code>multi_multi.ipynb</code> (stored run)</td><td>18 personnel, max 3 trips, capacity 3</td><td class="num">531 (optimal)</td></tr>
+      <tr><td><code>models/model_2.pkl</code></td><td>14 personnel, 4 trips, capacity 3</td><td class="num">471 (9.3 min, per notebook note)</td></tr>
+      <tr><td><code>models/model_3.pkl</code></td><td>18 personnel, 4 trips, capacity 3</td><td class="num">531 (33 min, per notebook note)</td></tr>
+    </tbody></table></div>
+  <p style="margin-top:26px"><a class="btn" href="https://github.com/jolikewe/vehicle_routing" rel="noopener">View the repo on GitHub</a></p>
+</section>
+</main>
+<footer class="foot"><span>Jovi &middot; 2026</span><span>Constraint model: Google OR-Tools CP-SAT. Browser planner: plain JavaScript.</span></footer>
+</div>
+
+<script id="solver-src">/* Browser solver for the two-leg personnel transport problem of planck_optimiser.py.
+ * Exact schedule simulator + simulated annealing over trip assignments.
+ * Works in a Web Worker, on the main thread, and under node (module.exports). */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.VRP = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+  var INF = Infinity;
+
+  /* ---------- numpy-compatible random routes (legacy MT19937 + randint(5,12)) ---------- */
+  function mt19937(seed) {
+    var mt = new Uint32Array(624), idx = 624;
+    mt[0] = seed >>> 0;
+    for (var i = 1; i < 624; i++) {
+      var s = mt[i - 1] ^ (mt[i - 1] >>> 30);
+      mt[i] = (((((s & 0xffff0000) >>> 16) * 1812433253) << 16) + (s & 0x0000ffff) * 1812433253 + i) >>> 0;
+    }
+    return function () {
+      if (idx >= 624) {
+        for (var k = 0; k < 624; k++) {
+          var y = (mt[k] & 0x80000000) | (mt[(k + 1) % 624] & 0x7fffffff);
+          mt[k] = mt[(k + 397) % 624] ^ (y >>> 1) ^ ((y & 1) ? 0x9908b0df : 0);
+        }
+        idx = 0;
+      }
+      var x = mt[idx++];
+      x ^= x >>> 11; x ^= (x << 7) & 0x9d2c5680; x ^= (x << 15) & 0xefc60000; x ^= x >>> 18;
+      return x >>> 0;
+    };
+  }
+  /* Same draw order as Model.generate_route: pickup x hub, then hub x destination, randint(5, 12). */
+  function randomRoutes(nH, seed) {
+    var g = mt19937(seed);
+    function ri() { var v; do { v = g() & 7; } while (v > 6 - 1); return 5 + v; }
+    var dSH = [], dHD = [], s, h;
+    for (s = 0; s < 2; s++) { dSH.push([]); for (h = 0; h < nH; h++) dSH[s].push(ri()); }
+    for (h = 0; h < nH; h++) { dHD.push([]); for (var d = 0; d < 2; d++) dHD[h].push(ri()); }
+    return { dSH: dSH, dHD: dHD };
+  }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* ---------- instance ---------- */
+  /* p: {counts:[n0,n1], nH, nB, nA, cap, R, load, dSH[2][nH], dHD[nH][2], fixedHub} */
+  function makeInst(p) {
+    var I = {
+      counts: p.counts.slice(), nH: p.nH, nB: p.nB, nA: p.nA, cap: p.cap, R: p.R, load: p.load | 0,
+      dSH: p.dSH, dHD: p.dHD, fixedHub: !!p.fixedHub, nD: 2
+    };
+    var N = I.counts[0] + I.counts[1];
+    I.N = N;
+    I.ps = new Int8Array(N);
+    for (var n = 0; n < N; n++) I.ps[n] = n < I.counts[0] ? 0 : 1;   /* pickup k goes to destination k */
+    var nbs = I.nB * I.R, nas = I.nA * I.R;
+    I.bc = new Int32Array(nbs); I.bs = new Int32Array(nbs); I.ac = new Int32Array(nas); I.as_ = new Int32Array(nas);
+    I.hubArr = new Int32Array(nbs); I.LH = new Int32Array(nbs);
+    I.aReady = new Int32Array(nas); I.aDep = new Int32Array(nas); I.aArr = new Int32Array(nas); I.aTH = new Int32Array(nas);
+    I.aD0 = new Int8Array(I.nA);
+    I.out = { sum: 0, mk: 0, waitSum: 0 };
+    return I;
+  }
+  function fixedHubOf(I, n) { return n % I.nH; }   /* repo notebook: person n is pre-assigned hub n mod #hubs */
+
+  /* ---------- exact simulator ----------
+   * State: bSlot[n] = beta vehicle*R + trip, aSlot[n] likewise, hub[n].
+   * Mirrors constraints i-xiii of planck_optimiser.py with every time at its earliest value:
+   *  beta trip r : origin -> hub (loaded) -> next origin (empty); alpha trip r : prev dest -> hub (empty) -> dest (loaded)
+   *  T_hub(0) = l + d ; T_hub(r+1) = T_hub(r) + l + d(hub_r, origin_{r+1}) + l + d(origin_{r+1}, hub_{r+1})
+   *  alpha loaded arrival T_D = max(T_hubA + l, latest rider arrival at hub) + d(hub, D)
+   * jit=true additionally right-shifts bus trips as late as possible (only hub waiting changes).
+   * Returns false when the state breaks a rule (capacity, mixed hub/origin/destination in one trip). */
+  function simulate(I, bSlot, aSlot, hub, jit) {
+    var N = I.N, R = I.R, nB = I.nB, nA = I.nA, nH = I.nH, cap = I.cap, l = I.load, dSH = I.dSH, dHD = I.dHD, ps = I.ps;
+    var bc = I.bc, bs = I.bs, ac = I.ac, as_ = I.as_, hubArr = I.hubArr, aReady = I.aReady, aDep = I.aDep, aArr = I.aArr, aTH = I.aTH;
+    bc.fill(0); bs.fill(-1); ac.fill(0); as_.fill(-1); aReady.fill(0);
+    var n, s, sg;
+    for (n = 0; n < N; n++) {
+      s = bSlot[n]; if (++bc[s] > cap) return false;
+      sg = ps[n] * nH + hub[n]; if (bs[s] < 0) bs[s] = sg; else if (bs[s] !== sg) return false;
+      s = aSlot[n]; if (++ac[s] > cap) return false;
+      sg = hub[n] * 2 + ps[n]; if (as_[s] < 0) as_[s] = sg; else if (as_[s] !== sg) return false;
+    }
+    var v, r, o, h, d, TH, prevH, prevT;
+    for (v = 0; v < nB; v++) {
+      prevH = -1; prevT = 0;
+      for (r = 0; r < R; r++) {
+        s = v * R + r; if (!bc[s]) continue;
+        sg = bs[s]; o = (sg / nH) | 0; h = sg % nH;
+        TH = prevH < 0 ? l + dSH[o][h] : prevT + 2 * l + dSH[o][prevH] + dSH[o][h];
+        hubArr[s] = TH; prevH = h; prevT = TH;
+      }
+    }
+    for (n = 0; n < N; n++) { s = aSlot[n]; var t = hubArr[bSlot[n]]; if (t > aReady[s]) aReady[s] = t; }
+    for (v = 0; v < nA; v++) {
+      var prevD = -1; prevT = 0;
+      for (r = 0; r < R; r++) {
+        s = v * R + r; if (!ac[s]) continue;
+        sg = as_[s]; h = (sg / 2) | 0; d = sg - 2 * h;
+        if (prevD < 0) { I.aD0[v] = dHD[h][0] <= dHD[h][1] ? 0 : 1; TH = l + dHD[h][I.aD0[v]]; }
+        else TH = prevT + l + dHD[h][prevD];
+        var TD = Math.max(TH + l, aReady[s]) + dHD[h][d];
+        aTH[s] = TH; aArr[s] = TD; aDep[s] = TD - dHD[h][d]; prevD = d; prevT = TD;
+      }
+    }
+    var sum = 0, mk = 0, waitSum = 0;
+    for (n = 0; n < N; n++) { var a = aArr[aSlot[n]]; sum += a; if (a > mk) mk = a; }
+    if (jit) {
+      var LH = I.LH; LH.fill(1 << 28);
+      for (n = 0; n < N; n++) { s = bSlot[n]; var dp = aDep[aSlot[n]]; if (dp < LH[s]) LH[s] = dp; }
+      for (v = 0; v < nB; v++) {
+        var nxt = -1;
+        for (r = R - 1; r >= 0; r--) {
+          s = v * R + r; if (!bc[s]) continue;
+          if (nxt >= 0) {
+            sg = bs[nxt]; var no = (sg / nH) | 0, nh = sg % nH; var h0 = bs[s] % nH;
+            var lim = LH[nxt] - 2 * l - dSH[no][h0] - dSH[no][nh];
+            if (lim < LH[s]) LH[s] = lim;
+          }
+          nxt = s;
+        }
+      }
+      for (n = 0; n < N; n++) waitSum += aDep[aSlot[n]] - LH[bSlot[n]];
+    } else {
+      for (n = 0; n < N; n++) waitSum += aDep[aSlot[n]] - hubArr[bSlot[n]];
+    }
+    I.out.sum = sum; I.out.mk = mk; I.out.waitSum = waitSum;
+    return true;
+  }
+
+  function objValue(I, obj, m) {
+    var N = I.N;
+    switch (obj.kind) {
+      case 'makespan': return m.mk;
+      case 'wait': return m.waitSum / N;
+      case 'mix': return m.mk + obj.lambda * m.waitSum / N;
+      default: return m.sum;
+    }
+  }
+  function searchCost(I, obj, m) {   /* tiny tie-breakers keep the search moving on plateaus */
+    var N = I.N;
+    switch (obj.kind) {
+      case 'makespan': return m.mk + 0.01 * m.sum / N;
+      case 'wait': return m.waitSum / N + 0.01 * m.sum / N;
+      case 'mix': return m.mk + obj.lambda * m.waitSum / N + 0.005 * m.sum / N;
+      default: return m.sum;
+    }
+  }
+  function needsJit(obj) { return obj.kind === 'wait' || obj.kind === 'mix'; }
+
+  /* ---------- full schedule (same shape as schedule.json) ---------- */
+  function buildSchedule(I, st, jit) {
+    if (!simulate(I, st.bSlot, st.aSlot, st.hub, jit)) return null;
+    var N = I.N, R = I.R, nH = I.nH, l = I.load, dSH = I.dSH, dHD = I.dHD;
+    var people = [], legs = [], n, v, r, s;
+    var TB = function (sl) { return jit ? I.LH[sl] : I.hubArr[sl]; };
+    var ridersB = {}, ridersA = {};
+    for (n = 0; n < N; n++) { (ridersB[st.bSlot[n]] = ridersB[st.bSlot[n]] || []).push(n); (ridersA[st.aSlot[n]] = ridersA[st.aSlot[n]] || []).push(n); }
+    for (v = 0; v < I.nB; v++) {
+      var trips = []; for (r = 0; r < R; r++) if (I.bc[v * R + r]) trips.push(v * R + r);
+      trips.forEach(function (sl, k) {
+        var sg = I.bs[sl], o = (sg / nH) | 0, h = sg % nH, T = TB(sl);
+        legs.push({ vehicle: 'Vb' + (v + 1), kind: 'beta', trip: k, frm: 'S' + (o + 1), to: 'H' + (h + 1), depart: T - dSH[o][h], arrive: T, loaded: true, riders: ridersB[sl].slice() });
+        var no = k + 1 < trips.length ? (I.bs[trips[k + 1]] / nH) | 0 : o;
+        legs.push({ vehicle: 'Vb' + (v + 1), kind: 'beta', trip: k, frm: 'H' + (h + 1), to: 'S' + (no + 1), depart: T + l, arrive: T + l + dSH[no][h], loaded: false, riders: [] });
+      });
+    }
+    for (v = 0; v < I.nA; v++) {
+      var tr = []; for (r = 0; r < R; r++) if (I.ac[v * R + r]) tr.push(v * R + r);
+      var prevD = -1;
+      tr.forEach(function (sl, k) {
+        var sg = I.as_[sl], h = (sg / 2) | 0, d = sg - 2 * h, from = k === 0 ? I.aD0[v] : prevD;
+        legs.push({ vehicle: 'Va' + (v + 1), kind: 'alpha', trip: k, frm: 'D' + (from + 1), to: 'H' + (h + 1), depart: I.aTH[sl] - dHD[h][from], arrive: I.aTH[sl], loaded: false, riders: [] });
+        legs.push({ vehicle: 'Va' + (v + 1), kind: 'alpha', trip: k, frm: 'H' + (h + 1), to: 'D' + (d + 1), depart: I.aDep[sl], arrive: I.aArr[sl], loaded: true, riders: ridersA[sl].slice() });
+        prevD = d;
+      });
+    }
+    var bIdx = {}, aIdx = {};
+    for (v = 0; v < I.nB; v++) { var k1 = 0; for (r = 0; r < R; r++) if (I.bc[v * R + r]) bIdx[v * R + r] = k1++; }
+    for (v = 0; v < I.nA; v++) { var k2 = 0; for (r = 0; r < R; r++) if (I.ac[v * R + r]) aIdx[v * R + r] = k2++; }
+    for (n = 0; n < N; n++) {
+      var bs_ = st.bSlot[n], as2 = st.aSlot[n];
+      people.push({
+        id: n, S: 'S' + (I.ps[n] + 1), H: 'H' + (st.hub[n] + 1), D: 'D' + (I.ps[n] + 1),
+        beta: 'Vb' + (((bs_ / R) | 0) + 1), beta_trip: bIdx[bs_], alpha: 'Va' + (((as2 / R) | 0) + 1), alpha_trip: aIdx[as2],
+        depart_S: TB(bs_) - dSH[I.ps[n]][st.hub[n]], arrive_H: TB(bs_), depart_H: I.aDep[as2], arrive_D: I.aArr[as2]
+      });
+    }
+    legs.sort(function (a, b) { return a.vehicle < b.vehicle ? -1 : a.vehicle > b.vehicle ? 1 : a.depart - b.depart || a.arrive - b.arrive; });
+    var m = I.out, mk = m.mk;
+    return { people: people, legs: legs, sum: m.sum, makespan: mk, avgWait: m.waitSum / N, waitSum: m.waitSum, jit: !!jit };
+  }
+
+  /* encode an existing schedule (people[].beta, beta_trip, ...) into a state */
+  function stateFromSchedule(I, sched) {
+    var N = I.N, R = I.R, bSlot = new Int16Array(N), aSlot = new Int16Array(N), hub = new Int16Array(N);
+    sched.people.forEach(function (p) {
+      bSlot[p.id] = (+p.beta.slice(2) - 1) * R + p.beta_trip;
+      aSlot[p.id] = (+p.alpha.slice(2) - 1) * R + p.alpha_trip;
+      hub[p.id] = +p.H.slice(1) - 1;
+    });
+    return { bSlot: bSlot, aSlot: aSlot, hub: hub };
+  }
+
+  /* ---------- feasibility ---------- */
+  function tripsNeeded(I) {
+    var need = 0, k, h, cnt;
+    for (k = 0; k < 2; k++) {
+      if (I.fixedHub) {
+        for (h = 0; h < I.nH; h++) {
+          cnt = 0; for (var n = 0; n < I.N; n++) if (I.ps[n] === k && fixedHubOf(I, n) === h) cnt++;
+          need += Math.ceil(cnt / I.cap);
+        }
+      } else need += Math.ceil(I.counts[k] / I.cap);
+    }
+    return need;
+  }
+  function feasibility(I) {
+    if (I.N === 0) return { ok: false, msg: 'Add at least one person.' };
+    var need = tripsNeeded(I);
+    if (need > I.nB * I.R) return { ok: false, msg: 'Not enough bus trips: ' + need + ' trips are needed but ' + I.nB + ' bus(es) x ' + I.R + ' trip(s) give ' + (I.nB * I.R) + '. Add buses, trips or seats.' };
+    if (need > I.nA * I.R) return { ok: false, msg: 'Not enough boat trips: ' + need + ' trips are needed but ' + I.nA + ' boat(s) x ' + I.R + ' trip(s) give ' + (I.nA * I.R) + '. Add boats, trips or seats.' };
+    return { ok: true, need: need };
+  }
+
+  /* ---------- constructive greedy (randomised variants for restarts) ---------- */
+  function construct(I, rnd, randomize) {
+    var N = I.N, R = I.R, nH = I.nH, l = I.load, dSH = I.dSH, dHD = I.dHD, k, h, n;
+    var hub = new Int16Array(N), groups = [];   /* groups: {o, h, ids} = one bus trip */
+    for (k = 0; k < 2; k++) {
+      var ids = []; for (n = 0; n < N; n++) if (I.ps[n] === k) ids.push(n);
+      if (I.fixedHub) {
+        for (h = 0; h < nH; h++) {
+          var sub = ids.filter(function (x) { return fixedHubOf(I, x) === h; });
+          for (var i = 0; i < sub.length; i += I.cap) groups.push({ o: k, h: h, ids: sub.slice(i, i + I.cap) });
+        }
+      } else {
+        var best = 0, bc2 = INF;
+        for (h = 0; h < nH; h++) { var c = dSH[k][h] + dHD[h][k]; if (c < bc2) { bc2 = c; best = h; } }
+        for (var j = 0; j < ids.length; j += I.cap) {
+          var hh = randomize && rnd() < 0.5 ? (rnd() * nH) | 0 : best;
+          groups.push({ o: k, h: hh, ids: ids.slice(j, j + I.cap) });
+        }
+      }
+    }
+    groups.forEach(function (g) { g.ids.forEach(function (x) { hub[x] = g.h; }); g.key = dSH[g.o][g.h] + (randomize ? rnd() * 8 : 0); });
+    groups.sort(function (a, b) { return a.key - b.key; });
+    var bSlot = new Int16Array(N), aSlot = new Int16Array(N), cnt = new Int32Array(I.nB), prevH = new Int32Array(I.nB).fill(-1), prevT = new Int32Array(I.nB);
+    var arr = new Int32Array(N), v;
+    for (var gi = 0; gi < groups.length; gi++) {
+      var g = groups[gi], bv = -1, bt = INF, fin;
+      for (v = 0; v < I.nB; v++) {
+        if (cnt[v] >= R) continue;
+        fin = prevH[v] < 0 ? l + dSH[g.o][g.h] : prevT[v] + 2 * l + dSH[g.o][prevH[v]] + dSH[g.o][g.h];
+        if (randomize) fin += rnd() * 6;
+        if (fin < bt) { bt = fin; bv = v; }
+      }
+      if (bv < 0) return null;
+      fin = prevH[bv] < 0 ? l + dSH[g.o][g.h] : prevT[bv] + 2 * l + dSH[g.o][prevH[bv]] + dSH[g.o][g.h];
+      g.ids.forEach(function (x) { bSlot[x] = bv * R + cnt[bv]; arr[x] = fin; });
+      cnt[bv]++; prevH[bv] = g.h; prevT[bv] = fin;
+    }
+    /* alpha trips: per (hub, destination) chunk people by arrival time */
+    var ag = [];
+    for (h = 0; h < nH; h++) for (k = 0; k < 2; k++) {
+      var m = []; for (n = 0; n < N; n++) if (hub[n] === h && I.ps[n] === k) m.push(n);
+      m.sort(function (a, b) { return arr[a] - arr[b]; });
+      for (var q = 0; q < m.length; q += I.cap) {
+        var ch = m.slice(q, q + I.cap), rdy = 0; ch.forEach(function (x) { if (arr[x] > rdy) rdy = arr[x]; });
+        ag.push({ h: h, d: k, ids: ch, ready: rdy + (randomize ? rnd() * 6 : 0) });
+      }
+    }
+    ag.sort(function (a, b) { return a.ready - b.ready; });
+    var acnt = new Int32Array(I.nA), aprevD = new Int32Array(I.nA).fill(-1), aprevT = new Int32Array(I.nA);
+    for (var ai = 0; ai < ag.length; ai++) {
+      var t = ag[ai], av = -1, at = INF, TH, TD;
+      for (v = 0; v < I.nA; v++) {
+        if (acnt[v] >= R) continue;
+        if (aprevD[v] < 0) TH = l + Math.min(dHD[t.h][0], dHD[t.h][1]); else TH = aprevT[v] + l + dHD[t.h][aprevD[v]];
+        TD = Math.max(TH + l, t.ready) + dHD[t.h][t.d];
+        if (TD < at) { at = TD; av = v; }
+      }
+      if (av < 0) return null;
+      t.ids.forEach(function (x) { aSlot[x] = av * R + acnt[av]; });
+      acnt[av]++; aprevD[av] = t.d; aprevT[av] = at;
+    }
+    return { bSlot: bSlot, aSlot: aSlot, hub: hub };
+  }
+
+  /* ---------- simulated annealing ---------- */
+  function Solver(I, obj, seed, budgetMs) {
+    this.I = I; this.obj = obj; this.rnd = mulberry32(seed | 0); this.budget = budgetMs || 10000;
+    this.jit = needsJit(obj); this.elapsed = 0; this.iters = 0; this.cycle = 0; this.curve = []; this.done = false;
+    this.error = null; this.accepted = 0; this.best = null;
+    var f = feasibility(I);
+    if (!f.ok) { this.error = f.msg; this.done = true; return; }
+    var st = construct(I, this.rnd, false);
+    if (!st || !simulate(I, st.bSlot, st.aSlot, st.hub, this.jit)) { this.error = 'Could not build a starting schedule for these settings.'; this.done = true; return; }
+    this.cur = st; this.curCost = searchCost(I, obj, I.out);
+    this.cand = { bSlot: st.bSlot.slice(), aSlot: st.aSlot.slice(), hub: st.hub.slice() };
+    this.setBest(st, 0);
+    this.initCost = this.curCost;
+    this.scale = Math.max(0.5, 0.05 * this.curCost);
+    this.cycIters = 25000 + 3000 * Math.min(I.nB * I.R + I.nA * I.R, 40);
+    this.startCycle(true);
+  }
+  Solver.prototype.setBest = function (st, tms) {
+    var I = this.I; simulate(I, st.bSlot, st.aSlot, st.hub, this.jit);
+    var m = { sum: I.out.sum, mk: I.out.mk, waitSum: I.out.waitSum };
+    this.best = { state: { bSlot: st.bSlot.slice(), aSlot: st.aSlot.slice(), hub: st.hub.slice() }, cost: searchCost(I, this.obj, m), val: objValue(I, this.obj, m), m: m };
+    this.curve.push({ t: tms, v: this.best.val, it: this.iters });
+    this.dirty = true;
+  };
+  Solver.prototype.startCycle = function (first) {
+    var I = this.I, src;
+    var fresh = !first && this.cycle % 5 === 4;
+    if (fresh) src = construct(I, this.rnd, true);
+    if (!src) src = this.best.state;
+    this.cur.bSlot.set(src.bSlot); this.cur.aSlot.set(src.aSlot); this.cur.hub.set(src.hub);
+    simulate(I, this.cur.bSlot, this.cur.aSlot, this.cur.hub, this.jit);
+    this.curCost = searchCost(I, this.obj, I.out);
+    this.T0 = this.scale * (first ? 1 : fresh ? 0.8 : 0.45);
+    this.T1 = Math.max(this.T0 / 80, 1e-3);
+    this.cycleLeft = this.cycIters; this.cycTotal = this.cycIters; this.cycle++;
+  };
+  Solver.prototype.propose = function () {
+    var I = this.I, c = this.cand, rnd = this.rnd, N = I.N, R = I.R, i, n, m, s, s2, v, x = rnd();
+    var nbs = I.nB * I.R, nas = I.nA * I.R, free = !I.fixedHub;
+    var pb = free ? [0.16, 0.32, 0.42, 0.52, 0.64, 0.72, 0.76, 0.80, 0.88, 0.93] : [0.20, 0.40, 0.50, 0.60, 0.80, 0.90, 0.90, 0.90, 0.90, 1];
+    if (x < pb[0]) {                       /* swap two bus trips (any vehicles) */
+      if (nbs < 2) return false; s = (rnd() * nbs) | 0; s2 = (rnd() * nbs) | 0; if (s === s2) return false;
+      for (i = 0; i < N; i++) { if (c.bSlot[i] === s) c.bSlot[i] = s2; else if (c.bSlot[i] === s2) c.bSlot[i] = s; }
+    } else if (x < pb[1]) {                /* swap two boat trips */
+      if (nas < 2) return false; s = (rnd() * nas) | 0; s2 = (rnd() * nas) | 0; if (s === s2) return false;
+      for (i = 0; i < N; i++) { if (c.aSlot[i] === s) c.aSlot[i] = s2; else if (c.aSlot[i] === s2) c.aSlot[i] = s; }
+    } else if (x < pb[2] || x < pb[3]) {   /* re-sequence one vehicle: pull a trip to another position */
+      var beta = x < pb[2], nv = beta ? I.nB : I.nA; if (R < 2) return false;
+      v = (rnd() * nv) | 0; var r1 = (rnd() * R) | 0, r2 = (rnd() * R) | 0; if (r1 === r2) return false;
+      var arr = beta ? c.bSlot : c.aSlot;
+      for (i = 0; i < N; i++) {
+        s = arr[i]; if (((s / R) | 0) !== v) continue; var r = s - v * R, nr = r;
+        if (r === r1) nr = r2; else if (r1 < r2 && r > r1 && r <= r2) nr = r - 1; else if (r1 > r2 && r >= r2 && r < r1) nr = r + 1;
+        arr[i] = v * R + nr;
+      }
+    } else if (x < pb[4]) {                /* swap two people between bus trips or between boat trips */
+      n = (rnd() * N) | 0; m = (rnd() * N) | 0; if (n === m) return false;
+      var useB = rnd() < 0.5;
+      if (I.ps[n] !== I.ps[m] || c.hub[n] !== c.hub[m]) return false;
+      if (useB) { s = c.bSlot[n]; c.bSlot[n] = c.bSlot[m]; c.bSlot[m] = s; } else { s = c.aSlot[n]; c.aSlot[n] = c.aSlot[m]; c.aSlot[m] = s; }
+    } else if (x < pb[5]) {                /* move one person into another trip (bus or boat) */
+      n = (rnd() * N) | 0;
+      if (rnd() < 0.5) c.bSlot[n] = (rnd() * nbs) | 0; else c.aSlot[n] = (rnd() * nas) | 0;
+    } else if (x < pb[6]) {                /* move one person to another hub (free-hub mode) */
+      n = (rnd() * N) | 0; c.hub[n] = (rnd() * I.nH) | 0; c.bSlot[n] = (rnd() * nbs) | 0; c.aSlot[n] = (rnd() * nas) | 0;
+    } else if (x < pb[7]) {                /* swap two people from the same pickup who use different hubs */
+      n = (rnd() * N) | 0; m = (rnd() * N) | 0; if (n === m || I.ps[n] !== I.ps[m] || c.hub[n] === c.hub[m]) return false;
+      s = c.hub[n]; c.hub[n] = c.hub[m]; c.hub[m] = s; s = c.bSlot[n]; c.bSlot[n] = c.bSlot[m]; c.bSlot[m] = s; s = c.aSlot[n]; c.aSlot[n] = c.aSlot[m]; c.aSlot[m] = s;
+    } else if (x < pb[8]) {                /* retarget a whole trip pair to another hub */
+      n = (rnd() * N) | 0; var h2 = (rnd() * I.nH) | 0, bsn = c.bSlot[n], asn = c.aSlot[n];
+      for (i = 0; i < N; i++) if (c.bSlot[i] === bsn || c.aSlot[i] === asn) c.hub[i] = h2;
+    } else {
+      /* swap whole trip contents AND the alpha order: pair move keeps beta/alpha order consistent */
+      if (nbs < 2) return false; s = (rnd() * nbs) | 0; s2 = (rnd() * nbs) | 0; if (s === s2) return false;
+      for (i = 0; i < N; i++) { if (c.bSlot[i] === s) c.bSlot[i] = s2; else if (c.bSlot[i] === s2) c.bSlot[i] = s; }
+      if (nas >= 2) { s = (rnd() * nas) | 0; s2 = (rnd() * nas) | 0; if (s !== s2) for (i = 0; i < N; i++) { if (c.aSlot[i] === s) c.aSlot[i] = s2; else if (c.aSlot[i] === s2) c.aSlot[i] = s; } }
+    }
+    return true;
+  };
+  /* run for about ms milliseconds; returns true when the search has finished */
+  Solver.prototype.step = function (ms) {
+    if (this.done) return true;
+    var I = this.I, c = this.cand, cur = this.cur, t0 = Date.now(), tn = 0;
+    var logR = Math.log(this.T1 / this.T0);
+    for (;;) {
+      for (var k = 0; k < 200; k++) {
+        c.bSlot.set(cur.bSlot); c.aSlot.set(cur.aSlot); c.hub.set(cur.hub);
+        this.iters++; this.cycleLeft--;
+        if (this.propose() && simulate(I, c.bSlot, c.aSlot, c.hub, this.jit)) {
+          var cost = searchCost(I, this.obj, I.out), T = this.T0 * Math.exp(logR * (1 - this.cycleLeft / this.cycTotal));
+          var dlt = cost - this.curCost;
+          if (dlt <= 0 || this.rnd() < Math.exp(-dlt / T)) {
+            cur.bSlot.set(c.bSlot); cur.aSlot.set(c.aSlot); cur.hub.set(c.hub); this.curCost = cost; this.accepted++;
+            if (cost < this.best.cost - 1e-9) this.setBest(c, this.elapsed + (Date.now() - t0));
+          }
+        }
+        if (this.cycleLeft <= 0) this.startCycle(false);
+      }
+      tn = Date.now() - t0;
+      if (tn >= ms) break;
+    }
+    this.elapsed += tn;
+    if (this.elapsed >= this.budget) this.done = true;
+    return this.done;
+  };
+  Solver.prototype.bestSchedule = function () { return buildSchedule(this.I, this.best.state, this.jit); };
+  Solver.prototype.curNow = function () { return this.curCost; };
+
+  return {
+    makeInst: makeInst, simulate: simulate, buildSchedule: buildSchedule, stateFromSchedule: stateFromSchedule,
+    feasibility: feasibility, Solver: Solver, randomRoutes: randomRoutes, objValue: objValue, needsJit: needsJit,
+    construct: construct, mulberry32: mulberry32
+  };
+});
+</script>
+<script id="engine-src">/* Runs a Solver in slices and reports progress. Used inside a Web Worker, or on the main thread as a fallback. */
+function makeEngine(post) {
+  var S = null, timer = null, lastPost = 0, sent = 0, watch = false;
+  function send(final) {
+    var now = Date.now();
+    if (!final && now - lastPost < 90) return;
+    lastPost = now;
+    var msg = { type: 'prog', iters: S.iters, elapsed: S.elapsed, val: S.best.val, m: S.best.m, done: !!S.done, newPts: S.curve.slice(sent), cyc: S.cycle };
+    sent = S.curve.length;
+    if (S.dirty) { msg.sched = S.bestSchedule(); S.dirty = false; }
+    post(msg);
+  }
+  function loop() {
+    if (!S) return;
+    var slow = watch && S.elapsed < 1500;
+    S.step(slow ? 3 : 30);
+    send(S.done);
+    if (!S.done) timer = setTimeout(loop, slow ? 40 : 0);
+  }
+  return {
+    handle: function (m) {
+      clearTimeout(timer);
+      if (m.cmd === 'start') {
+        S = new VRP.Solver(VRP.makeInst(m.inst), m.obj, m.seed, m.budget);
+        sent = 0; watch = !!m.watch;
+        if (S.error) { S = null; post({ type: 'error', msg: 'Cannot plan this setup.' }); return; }
+        lastPost = 0; send(false); timer = setTimeout(loop, 0);
+      } else if (m.cmd === 'stop') {
+        if (S) { S.done = true; send(true); }
+      }
+    }
+  };
+}
+</script>
+<script>
+"use strict";
+var SC = {"objective":531,"params":{"num_personnel":18,"max_trips":3,"num_points_start":2,"num_points_holding":3,"num_points_destination":2,"num_vehicles_alpha":2,"num_vehicles_beta":2,"vehicle_capacity":3,"loading_time":0},"solver_status":"OPTIMAL","routes":{"H1-S1":8,"H1-S2":6,"H2-S1":9,"H2-S2":10,"H3-S1":6,"H3-S2":7,"H1-D1":5,"H1-D2":8,"H2-D1":5,"H2-D2":5,"H3-D1":10,"H3-D2":10},"nodes":{"S":["S1","S2"],"H":["H1","H2","H3"],"D":["D1","D2"]},"people":[{"id":0,"S":"S1","H":"H1","D":"D1","beta":"Vb1","beta_trip":0,"alpha":"Va1","alpha_trip":0,"depart_S":0,"arrive_H":8,"depart_H":8,"arrive_D":13},{"id":1,"S":"S1","H":"H2","D":"D1","beta":"Vb1","beta_trip":2,"alpha":"Va1","alpha_trip":2,"depart_S":27,"arrive_H":36,"depart_H":38,"arrive_D":43},{"id":2,"S":"S1","H":"H3","D":"D1","beta":"Vb2","beta_trip":2,"alpha":"Va2","alpha_trip":2,"depart_S":31,"arrive_H":37,"depart_H":37,"arrive_D":47},{"id":3,"S":"S1","H":"H1","D":"D1","beta":"Vb1","beta_trip":0,"alpha":"Va1","alpha_trip":0,"depart_S":0,"arrive_H":8,"depart_H":8,"arrive_D":13},{"id":4,"S":"S1","H":"H2","D":"D1","beta":"Vb1","beta_trip":2,"alpha":"Va1","alpha_trip":2,"depart_S":27,"arrive_H":36,"depart_H":38,"arrive_D":43},{"id":5,"S":"S1","H":"H3","D":"D1","beta":"Vb2","beta_trip":2,"alpha":"Va2","alpha_trip":2,"depart_S":31,"arrive_H":37,"depart_H":37,"arrive_D":47},{"id":6,"S":"S1","H":"H1","D":"D1","beta":"Vb1","beta_trip":0,"alpha":"Va1","alpha_trip":0,"depart_S":0,"arrive_H":8,"depart_H":8,"arrive_D":13},{"id":7,"S":"S1","H":"H2","D":"D1","beta":"Vb1","beta_trip":2,"alpha":"Va1","alpha_trip":2,"depart_S":27,"arrive_H":36,"depart_H":38,"arrive_D":43},{"id":8,"S":"S1","H":"H3","D":"D1","beta":"Vb2","beta_trip":2,"alpha":"Va2","alpha_trip":2,"depart_S":31,"arrive_H":37,"depart_H":37,"arrive_D":47},{"id":9,"S":"S2","H":"H1","D":"D2","beta":"Vb2","beta_trip":0,"alpha":"Va2","alpha_trip":0,"depart_S":0,"arrive_H":6,"depart_H":6,"arrive_D":14},{"id":10,"S":"S2","H":"H2","D":"D2","beta":"Vb2","beta_trip":1,"alpha":"Va2","alpha_trip":1,"depart_S":12,"arrive_H":22,"depart_H":22,"arrive_D":27},{"id":11,"S":"S2","H":"H3","D":"D2","beta":"Vb1","beta_trip":1,"alpha":"Va1","alpha_trip":1,"depart_S":14,"arrive_H":21,"depart_H":23,"arrive_D":33},{"id":12,"S":"S2","H":"H1","D":"D2","beta":"Vb2","beta_trip":0,"alpha":"Va2","alpha_trip":0,"depart_S":0,"arrive_H":6,"depart_H":6,"arrive_D":14},{"id":13,"S":"S2","H":"H2","D":"D2","beta":"Vb2","beta_trip":1,"alpha":"Va2","alpha_trip":1,"depart_S":12,"arrive_H":22,"depart_H":22,"arrive_D":27},{"id":14,"S":"S2","H":"H3","D":"D2","beta":"Vb1","beta_trip":1,"alpha":"Va1","alpha_trip":1,"depart_S":14,"arrive_H":21,"depart_H":23,"arrive_D":33},{"id":15,"S":"S2","H":"H1","D":"D2","beta":"Vb2","beta_trip":0,"alpha":"Va2","alpha_trip":0,"depart_S":0,"arrive_H":6,"depart_H":6,"arrive_D":14},{"id":16,"S":"S2","H":"H2","D":"D2","beta":"Vb2","beta_trip":1,"alpha":"Va2","alpha_trip":1,"depart_S":12,"arrive_H":22,"depart_H":22,"arrive_D":27},{"id":17,"S":"S2","H":"H3","D":"D2","beta":"Vb1","beta_trip":1,"alpha":"Va1","alpha_trip":1,"depart_S":14,"arrive_H":21,"depart_H":23,"arrive_D":33}],"legs":[{"vehicle":"Va1","kind":"alpha","trip":0,"frm":"D1","to":"H1","depart":0,"arrive":5,"loaded":false,"riders":[]},{"vehicle":"Va1","kind":"alpha","trip":0,"frm":"H1","to":"D1","depart":8,"arrive":13,"loaded":true,"riders":[0,3,6]},{"vehicle":"Va1","kind":"alpha","trip":1,"frm":"D1","to":"H3","depart":13,"arrive":23,"loaded":false,"riders":[]},{"vehicle":"Va1","kind":"alpha","trip":1,"frm":"H3","to":"D2","depart":23,"arrive":33,"loaded":true,"riders":[11,14,17]},{"vehicle":"Va1","kind":"alpha","trip":2,"frm":"D2","to":"H2","depart":33,"arrive":38,"loaded":false,"riders":[]},{"vehicle":"Va1","kind":"alpha","trip":2,"frm":"H2","to":"D1","depart":38,"arrive":43,"loaded":true,"riders":[1,4,7]},{"vehicle":"Va2","kind":"alpha","trip":0,"frm":"D1","to":"H1","depart":1,"arrive":6,"loaded":false,"riders":[]},{"vehicle":"Va2","kind":"alpha","trip":0,"frm":"H1","to":"D2","depart":6,"arrive":14,"loaded":true,"riders":[9,12,15]},{"vehicle":"Va2","kind":"alpha","trip":1,"frm":"D2","to":"H2","depart":14,"arrive":19,"loaded":false,"riders":[]},{"vehicle":"Va2","kind":"alpha","trip":1,"frm":"H2","to":"D2","depart":22,"arrive":27,"loaded":true,"riders":[10,13,16]},{"vehicle":"Va2","kind":"alpha","trip":2,"frm":"D2","to":"H3","depart":27,"arrive":37,"loaded":false,"riders":[]},{"vehicle":"Va2","kind":"alpha","trip":2,"frm":"H3","to":"D1","depart":37,"arrive":47,"loaded":true,"riders":[2,5,8]},{"vehicle":"Vb1","kind":"beta","trip":0,"frm":"S1","to":"H1","depart":0,"arrive":8,"loaded":true,"riders":[0,3,6]},{"vehicle":"Vb1","kind":"beta","trip":0,"frm":"H1","to":"S2","depart":8,"arrive":14,"loaded":false,"riders":[]},{"vehicle":"Vb1","kind":"beta","trip":1,"frm":"S2","to":"H3","depart":14,"arrive":21,"loaded":true,"riders":[11,14,17]},{"vehicle":"Vb1","kind":"beta","trip":1,"frm":"H3","to":"S1","depart":21,"arrive":27,"loaded":false,"riders":[]},{"vehicle":"Vb1","kind":"beta","trip":2,"frm":"S1","to":"H2","depart":27,"arrive":36,"loaded":true,"riders":[1,4,7]},{"vehicle":"Vb1","kind":"beta","trip":2,"frm":"H2","to":"S2","depart":36,"arrive":46,"loaded":false,"riders":[]},{"vehicle":"Vb2","kind":"beta","trip":0,"frm":"S2","to":"H1","depart":0,"arrive":6,"loaded":true,"riders":[9,12,15]},{"vehicle":"Vb2","kind":"beta","trip":0,"frm":"H1","to":"S2","depart":6,"arrive":12,"loaded":false,"riders":[]},{"vehicle":"Vb2","kind":"beta","trip":1,"frm":"S2","to":"H2","depart":12,"arrive":22,"loaded":true,"riders":[10,13,16]},{"vehicle":"Vb2","kind":"beta","trip":1,"frm":"H2","to":"S1","depart":22,"arrive":31,"loaded":false,"riders":[]},{"vehicle":"Vb2","kind":"beta","trip":2,"frm":"S1","to":"H3","depart":31,"arrive":37,"loaded":true,"riders":[2,5,8]},{"vehicle":"Vb2","kind":"beta","trip":2,"frm":"H3","to":"S2","depart":37,"arrive":44,"loaded":false,"riders":[]}],"makespan":47};
+var REF = {"runs":20,"ms":3000,"browser":{"runs":20,"sum":{"best":531,"worst":531,"mean":531,"hits":20},"makespan":{"best":43,"worst":43,"mean":43,"hits":20},"wait":{"best":0,"worst":0,"mean":0,"hits":20},"mix":{"best":43.333333333333336,"worst":43.333333333333336,"mean":43.33333333333334,"hits":20}},"cpsat":{"sum":{"value":531,"bound":531,"status":"OPTIMAL","secs":30.1},"makespan":{"value":43,"bound":43,"status":"OPTIMAL","secs":1.5},"wait":{"value":0,"bound":0,"status":"OPTIMAL","secs":1.2},"mix":{"value":43.333333333333336,"bound":43.333333333333336,"status":"OPTIMAL","secs":4.9}},"free":{"cpsat":{"sum":{"value":495,"bound":281,"status":"FEASIBLE","secs":400.1},"makespan":{"value":41,"bound":16,"status":"FEASIBLE","secs":200.1}},"browser":{"sum":{"best":492,"worst":492,"mean":492},"makespan":{"best":41,"worst":41,"mean":41}}},"note":""};
+/* ---------- helpers ---------- */
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+var NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent, text) {
+  var e = document.createElementNS(NS, tag);
+  for (var k in (attrs || {})) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+var PNAME = ['Pickup North', 'Pickup South'], DNAME = ['Destination Isle', 'Destination Cape'];
+var PSHORT = ['North', 'South'], DSHORT = ['Isle', 'Cape'];
+function nodeName(c, short) {
+  var t = c[0], i = +c.slice(1) - 1;
+  if (t === 'S') return (short ? PSHORT : PNAME)[i];
+  if (t === 'H') return (short ? 'Hub ' : 'Transfer Hub ') + (i + 1);
+  return (short ? DSHORT : DNAME)[i];
+}
+function vehName(c) { return (c.slice(0, 2) === 'Vb' ? 'Bus ' : 'Boat ') + c.slice(2); }
+function personName(i) { return 'Person ' + (i + 1); }
+function fmt(x, d) { return (Math.round(x * Math.pow(10, d || 0)) / Math.pow(10, d || 0)).toFixed(d || 0); }
+function metrics(s) {
+  var n = s.people.length, sum = 0, mk = 0, w = 0;
+  s.people.forEach(function (p) { sum += p.arrive_D; if (p.arrive_D > mk) mk = p.arrive_D; w += p.depart_H - p.arrive_H; });
+  return { sum: sum, mk: mk, aw: w / n, waitSum: w, n: n };
+}
+function niceStep(range, target) {
+  var raw = range / target, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+
+/* ---------- preset from the repo's schedule.json ---------- */
+function presetFromSchedule(sc) {
+  var p = sc.params, r = sc.routes, nH = p.num_points_holding, dSH = [[], []], dHD = [], h, s;
+  for (s = 0; s < 2; s++) for (h = 0; h < nH; h++) dSH[s].push(r['H' + (h + 1) + '-S' + (s + 1)]);
+  for (h = 0; h < nH; h++) dHD.push([r['H' + (h + 1) + '-D1'], r['H' + (h + 1) + '-D2']]);
+  return { counts: [p.num_personnel / 2, p.num_personnel / 2], nH: nH, nB: p.num_vehicles_beta, nA: p.num_vehicles_alpha, cap: p.vehicle_capacity, R: p.max_trips, load: p.loading_time, dSH: dSH, dHD: dHD, fixedHub: true };
+}
+var PRESET = presetFromSchedule(SC);
+var P = JSON.parse(JSON.stringify(PRESET));
+var OBJ = { kind: 'sum', lambda: 0.5 };
+var KEYOF = function (p) { return JSON.stringify(p); };
+
+/* ---------- Objective explainer (static, CP-SAT schedule) ---------- */
+var M0 = metrics(SC);
+$$('[data-k=sum]').forEach(function (e) { e.textContent = M0.sum; });
+$$('[data-k=mk]').forEach(function (e) { e.textContent = M0.mk; });
+$$('[data-k=aw]').forEach(function (e) { e.textContent = fmt(M0.aw, 2); });
+function drawBars(svg, sched, opt) {
+  opt = opt || {};
+  svg.innerHTML = '';
+  var rows = sched.people.slice().sort(function (a, b) { return a.arrive_D - b.arrive_D || a.id - b.id; });
+  var n = rows.length; if (!n) return;
+  var tmax = 0; rows.forEach(function (p) { if (p.arrive_D > tmax) tmax = p.arrive_D; });
+  var rh = n > 24 ? 14 : 20, L = 78, Rr = 44, W = 900, top = 6, H = top + n * rh + 28, sx = (W - L - Rr) / Math.max(1, tmax);
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  var step = niceStep(tmax, 8);
+  for (var t = 0; t <= tmax + 0.01; t += step) {
+    el('line', { x1: L + t * sx, x2: L + t * sx, y1: top, y2: top + n * rh, stroke: '#D3DACF', 'stroke-width': 1 }, svg);
+    el('text', { x: L + t * sx, y: top + n * rh + 18, 'text-anchor': 'middle', 'font-size': 13, fill: '#46586A' }, svg, t);
+  }
+  rows.forEach(function (p, i) {
+    var y = top + i * rh, g = el('g', { 'class': 'row' + (i === n - 1 ? ' top' : '') }, svg);
+    var tip = personName(p.id) + ': ' + nodeName(p.S, true) + ' to ' + nodeName(p.D, true) + ' via ' + nodeName(p.H, true) + '. Bus ' + p.depart_S + ' to ' + p.arrive_H + ', wait ' + (p.depart_H - p.arrive_H) + ', boat ' + p.depart_H + ' to ' + p.arrive_D + '.';
+    el('title', {}, g, tip);
+    el('text', { x: L - 8, y: y + rh * 0.72, 'text-anchor': 'end', 'font-size': rh > 16 ? 13.5 : 11.5, fill: '#10222F' }, g, personName(p.id));
+    var segs = [[0, p.depart_S, 'w0'], [p.depart_S, p.arrive_H, 'bus'], [p.arrive_H, p.depart_H, 'wait'], [p.depart_H, p.arrive_D, 'boat']];
+    segs.forEach(function (s) { if (s[1] > s[0]) el('rect', { x: L + s[0] * sx, y: y + 2, width: Math.max(0.5, (s[1] - s[0]) * sx), height: rh - 4, rx: 2, 'class': 'seg ' + s[2] }, g); });
+    el('text', { x: L + p.arrive_D * sx + 6, y: y + rh * 0.72, 'font-size': rh > 16 ? 13.5 : 11.5, 'font-weight': 650, fill: '#10222F' }, g, p.arrive_D);
+  });
+  el('text', { x: W - Rr, y: H - 2, 'text-anchor': 'end', 'font-size': 12.5, fill: '#46586A' }, svg, 'minutes since the start');
+  if (opt.mode) svg.setAttribute('data-mode', opt.mode);
+}
+function drawStrip(svg, sched) {
+  svg.innerHTML = '';
+  var rows = sched.people.slice().sort(function (a, b) { return a.arrive_D - b.arrive_D || a.id - b.id; });
+  var W = 900, L = 78, Rr = 80, sum = 0; rows.forEach(function (p) { sum += p.arrive_D; });
+  var sx = (W - L - Rr) / sum, x = L, H = 62;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  el('text', { x: L - 8, y: 30, 'text-anchor': 'end', 'font-size': 13, fill: '#10222F', 'font-weight': 650 }, svg, 'Added up');
+  rows.forEach(function (p, i) {
+    var w = p.arrive_D * sx, r = el('rect', { x: x, y: 12, width: w, height: 26, fill: p.S === 'S1' ? '#17577E' : '#2F86B8' }, svg);
+    el('title', {}, r, personName(p.id) + ': ' + p.arrive_D);
+    if (w > 15) el('text', { x: x + w / 2, y: 30, 'text-anchor': 'middle', 'font-size': w > 24 ? 12.5 : 10.5, fill: '#fff', 'font-weight': 600 }, svg, p.arrive_D);
+    x += w;
+  });
+  el('text', { x: x + 6, y: 31, 'font-size': 17, 'font-weight': 800, fill: '#10222F', 'font-family': 'Bricolage Grotesque, sans-serif' }, svg, '= ' + sum);
+  el('text', { x: L, y: 56, 'font-size': 12.5, fill: '#46586A' }, svg, 'Every arrival time laid end to end. Darker blue is Pickup North, lighter is Pickup South.');
+}
+var OBJTXT = {
+  sum: ['', 'Add up every person\'s arrival time. The 18 bars above end at ' + M0.sum + ' minutes in total. This rewards getting <em>everyone</em> there early, not only the last person, and it is the one the repo\'s CP-SAT notebook minimises.', M0.sum + ' minutes in total'],
+  max: ['', 'Only the slowest person counts: here the last arrival is at minute ' + M0.mk + ' (highlighted). Use it when the whole group must be in place by a deadline. One late person decides the score.', 'Last arrival: minute ' + M0.mk],
+  wait: ['', 'For each person, the time spent standing at the hub between the bus arriving and the boat leaving (red). The average over all 18 people is ' + fmt(M0.aw, 2) + ' minutes in this schedule. On its own it can be pushed to zero by holding buses back, so it is meant to be combined with another objective: weighted mix = last arrival + weight x average hub wait, as in the formulation.', 'Average hub wait: ' + fmt(M0.aw, 2) + ' minutes']
+};
+function setObjTab(mode) {
+  $$('.tab').forEach(function (t) { var on = t.dataset.mode === mode; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; });
+  $('#obj-eq').textContent = OBJTXT[mode][2];
+  $('#obj-text').innerHTML = OBJTXT[mode][1];
+  $('#exp-bars').setAttribute('data-mode', mode);
+  $('#exp-strip').style.opacity = mode === 'sum' ? 1 : .25;
+  $('#panel-obj').setAttribute('aria-labelledby', 'tab-' + mode);
+}
+drawBars($('#exp-bars'), SC, { mode: 'sum' }); drawStrip($('#exp-strip'), SC); setObjTab('sum');
+$$('.tab').forEach(function (t, i, all) {
+  t.addEventListener('click', function () { setObjTab(t.dataset.mode); });
+  t.addEventListener('keydown', function (e) {
+    var d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (d) { e.preventDefault(); var n = all[(i + d + all.length) % all.length]; n.focus(); setObjTab(n.dataset.mode); }
+  });
+});
+
+/* ---------- engine (worker with main-thread fallback) ---------- */
+var engine = null, workerOK = false;
+function onEngineMsg(m) { handleProgress(m); }
+function startEngine(msg) {
+  if (engine && engine.kill) engine.kill();
+  engine = null;
+  try {
+    var src = document.getElementById('solver-src').textContent + '\n' + document.getElementById('engine-src').textContent +
+      '\nvar E=makeEngine(function(m){postMessage(m)});onmessage=function(e){E.handle(e.data)};';
+    var url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    var w = new Worker(url);
+    w.onmessage = function (e) { if (engine && engine.w === w) onEngineMsg(e.data); };
+    w.onerror = function () { w.terminate(); engine = null; fallback(msg); };
+    engine = { w: w, kill: function () { w.terminate(); URL.revokeObjectURL(url); }, send: function (m) { w.postMessage(m); } };
+    workerOK = true; w.postMessage(msg);
+  } catch (err) { fallback(msg); }
+}
+function fallback(msg) {
+  workerOK = false;
+  var alive = true, E = makeEngine(function (m) { if (alive) onEngineMsg(m); });
+  engine = { kill: function () { alive = false; E.handle({ cmd: 'stop' }); }, send: function (m) { E.handle(m); } };
+  E.handle(msg);
+}
+
+/* ---------- lab state ---------- */
+var cur = null, curKind = 'browser', latestBrowser = null, curve = [], runInfo = { iters: 0, elapsed: 0, done: true, val: null, m: null }, errMsg = null, restartTimer = null;
+var tMax = 1, t = 0, playing = false, lastTs = 0;
+function isPresetInstance() { return KEYOF(P) === KEYOF(PRESET); }
+function refFor() {
+  if (!REF || !isPresetInstance()) return null;
+  var k = OBJ.kind === 'mix' ? (Math.abs(OBJ.lambda - 0.5) < 1e-9 ? 'mix' : null) : OBJ.kind;
+  return k && REF.cpsat[k] ? REF.cpsat[k] : null;
+}
+var OBJLABEL = { sum: 'Total arrival time', makespan: 'Last arrival', wait: 'Average hub wait', mix: 'Last arrival + weight x hub wait' };
+var OBJUNIT = { sum: 'min in total', makespan: 'min', wait: 'min per person', mix: 'min' };
+
+function restart() {
+  var I = VRP.makeInst(P), f = VRP.feasibility(I);
+  curve = []; runInfo = { iters: 0, elapsed: 0, done: false, val: null, m: null }; errMsg = null;
+  if (!f.ok) {
+    if (engine && engine.kill) engine.kill(); engine = null;
+    errMsg = f.msg; runInfo.done = true; latestBrowser = null;
+    if (curKind === 'browser') { cur = null; renderAll(); } else renderStatus();
+    renderScore(); drawConv(); return;
+  }
+  var eff = +$('#c-eff').value;
+  startEngine({ cmd: 'start', inst: P, obj: OBJ, seed: (Math.random() * 1e9) | 0, budget: eff, watch: $('#c-pace').value === 'watch' && !reduce });
+  renderStatus();
+}
+function scheduleRestart() { clearTimeout(restartTimer); restartTimer = setTimeout(restart, 300); renderStatus(); }
+
+function handleProgress(m) {
+  if (m.type === 'error') { errMsg = m.msg; renderStatus(); return; }
+  runInfo.iters = m.iters; runInfo.elapsed = m.elapsed; runInfo.done = m.done; runInfo.val = m.val; runInfo.m = m.m;
+  m.newPts.forEach(function (p) { curve.push(p); });
+  var changed = false;
+  if (m.sched) { latestBrowser = m.sched; if (curKind === 'browser') { setSchedule(m.sched); changed = true; } }
+  renderScore(changed); renderStatus(); drawConv();
+}
+function renderStatus() {
+  var s = $('#status'); s.className = 'status' + (errMsg ? ' err' : '');
+  if (errMsg) s.textContent = errMsg;
+  else if (restartTimer && !runInfo.iters) s.textContent = 'Updating...';
+  else if (runInfo.done) s.textContent = runInfo.iters ? 'Finished: ' + runInfo.iters.toLocaleString('en') + ' schedules tried in ' + fmt(runInfo.elapsed / 1000, 1) + ' s of search.' : '';
+  else s.textContent = 'Searching: ' + runInfo.iters.toLocaleString('en') + ' schedules tried...';
+  $('#b-stop').disabled = runInfo.done;
+}
+function renderScore(flash) {
+  var ref = refFor(), unit = OBJUNIT[OBJ.kind];
+  $('#k-label').textContent = 'Browser planner: ' + OBJLABEL[OBJ.kind].toLowerCase() + ', best so far';
+  var big = $('#k-best');
+  if (runInfo.val == null) { big.textContent = errMsg ? '-' : '...'; $('#k-sub').textContent = errMsg ? 'No plan for these settings' : ' '; }
+  else {
+    var d = OBJ.kind === 'sum' || OBJ.kind === 'makespan' ? 0 : 2;
+    big.textContent = fmt(runInfo.val, d); $('#k-sub').textContent = unit + ' (' + runInfo.iters.toLocaleString('en') + ' tried)';
+    if (flash && !reduce) { big.classList.remove('flash'); void big.offsetWidth; big.classList.add('flash'); }
+  }
+  var rb = $('#k-refbox');
+  if (ref) {
+    var d2 = OBJ.kind === 'sum' || OBJ.kind === 'makespan' ? 0 : 2;
+    $('#k-ref').textContent = fmt(ref.value, d2);
+    $('#k-refsub').textContent = ref.status === 'OPTIMAL' ? 'proven optimal by CP-SAT' : 'best CP-SAT found in its time limit (not proven)';
+    rb.style.opacity = 1;
+    if (runInfo.val != null) {
+      var diff = runInfo.val - ref.value;
+      if (Math.abs(diff) < 1e-6) { $('#k-gap').textContent = 'Match'; $('#k-gapsub').textContent = 'same score as CP-SAT'; }
+      else if (ref.value > 0) { $('#k-gap').textContent = (diff > 0 ? '+' : '') + fmt(diff / ref.value * 100, 1) + '%'; $('#k-gapsub').textContent = (diff > 0 ? 'above' : 'below') + ' the CP-SAT value (' + (diff > 0 ? '+' : '') + fmt(diff, d2) + ')'; }
+      else { $('#k-gap').textContent = '+' + fmt(diff, 2); $('#k-gapsub').textContent = 'minutes above CP-SAT'; }
+    } else { $('#k-gap').textContent = '-'; $('#k-gapsub').textContent = ' '; }
+  } else {
+    $('#k-ref').textContent = 'n/a'; rb.style.opacity = .6;
+    $('#k-refsub').textContent = isPresetInstance() ? 'no CP-SAT value stored for this weight' : 'CP-SAT reference exists only for the repo instance';
+    $('#k-gap').textContent = '-'; $('#k-gapsub').textContent = 'no proven value to compare with';
+  }
+  $('#viewsw').hidden = !(isPresetInstance());
+  var s = cur ? metrics(cur) : null, mini = $('#mini');
+  mini.innerHTML = '';
+  if (s) {
+    var items = [['sum', 'Total arrival', s.sum], ['mk', 'Last arrival', s.mk], ['aw', 'Avg hub wait', fmt(s.aw, 2)]];
+    var key = { sum: 'sum', makespan: 'mk', wait: 'aw', mix: 'mix' }[OBJ.kind];
+    items.forEach(function (it) { var sp = document.createElement('span'); if (it[0] === key || key === 'mix' && it[0] !== 'sum') sp.className = 'on'; sp.innerHTML = it[1] + ' <b>' + it[2] + '</b>'; mini.appendChild(sp); });
+    var tag = document.createElement('span'); tag.textContent = curKind === 'cpsat' ? '(CP-SAT schedule shown)' : '(browser schedule shown)'; mini.appendChild(tag);
+  }
+}
+
+/* ---------- convergence chart ---------- */
+function drawConv() {
+  var svg = $('#conv'); svg.innerHTML = '';
+  var narrow = svg.parentNode.clientWidth < 560, W = narrow ? 460 : 900, H = narrow ? 290 : 260, L = narrow ? 50 : 56, R = narrow ? 68 : 70, T = 16, B = 44, fs = narrow ? 14 : 12.5;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  if (!curve.length) { el('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', 'font-size': fs + 2, fill: '#46586A' }, svg, errMsg || 'Waiting for the first schedule...'); return; }
+  var ref = refFor(), maxIt = Math.max(10, runInfo.iters, curve[curve.length - 1].it);
+  var xmax = Math.max(3, Math.ceil(Math.log10(maxIt)) ), pts = curve.map(function (p) { return { x: Math.log10(Math.max(1, p.it)), v: p.v }; });
+  var vmin = Math.min.apply(null, pts.map(function (p) { return p.v; }).concat(ref ? [ref.value] : [])), vmax = pts[0].v;
+  if (vmax - vmin < 1e-9) { vmax = vmin + Math.max(1, Math.abs(vmin) * 0.05); }
+  var pad = (vmax - vmin) * 0.12; vmin -= pad; vmax += pad;
+  var sx = function (x) { return L + (x / xmax) * (W - L - R); }, sy = function (v) { return T + (1 - (v - vmin) / (vmax - vmin)) * (H - T - B); };
+  var step = niceStep(vmax - vmin, 4), y0 = Math.ceil(vmin / step) * step, i, dd = step < 1 ? 1 : 0;
+  for (var yv = y0; yv <= vmax; yv += step) {
+    el('line', { x1: L, x2: W - R, y1: sy(yv), y2: sy(yv), stroke: '#D3DACF' }, svg);
+    el('text', { x: L - 8, y: sy(yv) + 4, 'text-anchor': 'end', 'font-size': fs, fill: '#46586A' }, svg, fmt(yv, dd));
+  }
+  for (i = 0; i <= xmax; i++) {
+    el('line', { x1: sx(i), x2: sx(i), y1: T, y2: H - B, stroke: '#E4E9E1' }, svg);
+    if (!narrow || i % 2 === 0) el('text', { x: sx(i), y: H - B + 18, 'text-anchor': 'middle', 'font-size': fs, fill: '#46586A' }, svg, Math.pow(10, i).toLocaleString('en'));
+  }
+  el('text', { x: (L + W - R) / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': fs + .5, fill: '#46586A' }, svg, 'schedules tried (log scale)');
+  el('text', { x: 14, y: (T + H - B) / 2, 'text-anchor': 'middle', 'font-size': fs + .5, fill: '#46586A', transform: 'rotate(-90 14 ' + (T + H - B) / 2 + ')' }, svg, 'minutes');
+  if (ref) {
+    el('line', { x1: L, x2: W - R, y1: sy(ref.value), y2: sy(ref.value), stroke: '#1E7A57', 'stroke-width': 2, 'stroke-dasharray': '7 5' }, svg);
+    el('text', { x: W - R + 6, y: sy(ref.value) - 2, 'font-size': fs, fill: '#1E7A57', 'font-weight': 650 }, svg, 'CP-SAT');
+    el('text', { x: W - R + 6, y: sy(ref.value) + 13, 'font-size': fs, fill: '#1E7A57', 'font-weight': 650 }, svg, fmt(ref.value, OBJ.kind === 'sum' || OBJ.kind === 'makespan' ? 0 : 2));
+  }
+  var d = 'M' + sx(pts[0].x) + ' ' + sy(pts[0].v);
+  for (i = 1; i < pts.length; i++) d += 'H' + sx(pts[i].x) + 'V' + sy(pts[i].v);
+  var last = pts[pts.length - 1]; d += 'H' + sx(Math.log10(Math.max(10, runInfo.iters)));
+  el('path', { d: d, fill: 'none', stroke: '#10222F', 'stroke-width': 2.6, 'stroke-linejoin': 'round' }, svg);
+  el('circle', { cx: sx(last.x), cy: sy(last.v), r: 5.5, fill: '#2F86B8', stroke: '#10222F', 'stroke-width': 2 }, svg);
+  el('text', { x: sx(Math.log10(Math.max(10, runInfo.iters))) + 6, y: sy(last.v) - 8, 'font-size': fs + 1, 'font-weight': 700, fill: '#10222F', 'text-anchor': 'end' }, svg, fmt(last.v, OBJ.kind === 'sum' || OBJ.kind === 'makespan' ? 0 : 2));
+}
+
+/* ---------- map ---------- */
+var mapState = null;
+function layout() {
+  var vertical = $('#mapwrap').clientWidth < 620, nH = P.nH, pos = {}, W, H, i;
+  if (!vertical) {
+    W = 900; H = Math.max(430, nH * 118 + 60);
+    for (i = 0; i < 2; i++) { pos['S' + (i + 1)] = { x: 120, y: H * (0.3 + 0.4 * i) }; pos['D' + (i + 1)] = { x: 790, y: H * (0.3 + 0.4 * i) }; }
+    for (i = 0; i < nH; i++) pos['H' + (i + 1)] = { x: 455, y: H * (i + 0.5) / nH };
+  } else {
+    W = 400; H = 640;
+    for (i = 0; i < 2; i++) { pos['S' + (i + 1)] = { x: 110 + 180 * i, y: 80 }; pos['D' + (i + 1)] = { x: 110 + 180 * i, y: 565 }; }
+    for (i = 0; i < nH; i++) pos['H' + (i + 1)] = { x: W * (i + 0.5) / nH, y: 322 };
+  }
+  return { vertical: vertical, W: W, H: H, pos: pos };
+}
+function buildMap() {
+  var svg = $('#map'); svg.innerHTML = ''; mapState = null;
+  var Ly = layout(), W = Ly.W, H = Ly.H, pos = Ly.pos, v = Ly.vertical;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  var defs = el('defs', {}, svg);
+  el('rect', { x: 0, y: 0, width: W, height: H, fill: '#E5EADB' }, svg);
+  var shore = v ? pos.H1.y : pos.H1.x, wave = '', k;
+  if (!v) { wave = 'M' + shore + ' 0'; for (k = 0; k <= H; k += 20) wave += 'Q' + (shore + (k / 20 % 2 ? 14 : -14)) + ' ' + (k + 10) + ' ' + shore + ' ' + (k + 20); wave += 'L' + W + ' ' + (H + 20) + 'L' + W + ' 0Z'; }
+  else { wave = 'M0 ' + shore; for (k = 0; k <= W; k += 20) wave += 'Q' + (k + 10) + ' ' + (shore + (k / 20 % 2 ? 14 : -14)) + ' ' + (k + 20) + ' ' + shore; wave += 'L' + (W + 20) + ' ' + H + 'L0 ' + H + 'Z'; }
+  el('path', { d: wave, fill: '#D2E3EA' }, svg);
+  for (k = 1; k <= 3; k++) { var o = k * (v ? 38 : 62); el('path', { d: v ? 'M20 ' + (shore + o) + 'q20 -10 40 0t40 0t40 0' : 'M' + (shore + o) + ' 40q-10 20 0 40t0 40', fill: 'none', stroke: '#BBD5E0', 'stroke-width': 2, 'stroke-linecap': 'round' }, svg); }
+  el('text', { x: v ? 12 : 14, y: v ? 18 : 24, 'font-size': 13, fill: '#6B7A5A', 'font-weight': 600 }, svg, 'LAND'.toLowerCase());
+  el('text', { x: v ? W - 12 : W - 14, y: v ? H - 12 : H - 14, 'text-anchor': 'end', 'font-size': 13, fill: '#3F7189', 'font-weight': 600 }, svg, 'water');
+  var gE = el('g', {}, svg), gL = el('g', {}, svg), gN = el('g', {}, svg), gV = el('g', {}, svg);
+  var edges = {}, s, h, d;
+  for (s = 1; s <= 2; s++) for (h = 1; h <= P.nH; h++) edges['S' + s + '-H' + h] = { a: 'S' + s, b: 'H' + h, kind: 'bus', t: P.dSH[s - 1][h - 1] };
+  for (h = 1; h <= P.nH; h++) for (d = 1; d <= 2; d++) edges['H' + h + '-D' + d] = { a: 'H' + h, b: 'D' + d, kind: 'boat', t: P.dHD[h - 1][d - 1] };
+  Object.keys(edges).forEach(function (key) {
+    var e = edges[key], A = pos[e.a], B = pos[e.b];
+    e.line = el('line', { x1: A.x, y1: A.y, x2: B.x, y2: B.y, stroke: e.kind === 'bus' ? '#E39A2D' : '#2F86B8', 'stroke-width': 1.6, 'stroke-opacity': .35, 'stroke-linecap': 'round', 'stroke-dasharray': e.kind === 'bus' ? '0' : '0' }, gE);
+    var f = 0.5 + (e.kind === 'bus' ? 0.0 : 0.0), lx = A.x + (B.x - A.x) * f, ly = A.y + (B.y - A.y) * f;
+    var g = el('g', { transform: 'translate(' + lx + ' ' + ly + ')' }, gL);
+    el('rect', { x: -10, y: -8, width: 20, height: 16, rx: 6, fill: '#FBFCF9', 'fill-opacity': .92 }, g);
+    el('text', { x: 0, y: 4, 'text-anchor': 'middle', 'font-size': 11.5, fill: e.kind === 'bus' ? '#8A4F06' : '#17577E', 'font-weight': 650 }, g, e.t);
+  });
+  var nodes = {};
+  Object.keys(pos).forEach(function (c) {
+    var q = pos[c], type = c[0], g = el('g', { transform: 'translate(' + q.x + ' ' + q.y + ')' }, gN), col = type === 'S' ? '#8A4F06' : type === 'D' ? '#17577E' : '#10222F';
+    el('circle', { r: 31, fill: '#FBFCF9', stroke: '#D3DACF', 'stroke-width': 5 }, g);
+    var ring = el('circle', { r: 31, fill: 'none', stroke: col, 'stroke-width': 5, 'stroke-linecap': 'round', transform: 'rotate(-90)' }, g);
+    var circ = 2 * Math.PI * 31; ring.setAttribute('stroke-dasharray', circ + ' ' + circ); ring.setAttribute('stroke-dashoffset', circ);
+    var txt = el('text', { x: 0, y: 8, 'text-anchor': 'middle', 'font-size': 23, 'font-weight': 700, fill: col, 'font-family': 'Bricolage Grotesque, sans-serif' }, g, '0');
+    var ly = 52; if (v && (type === 'H' || type === 'S')) ly = -42;
+    var lab = el('text', { x: 0, y: ly, 'text-anchor': 'middle', 'font-size': 14.5, 'font-weight': 650, fill: '#10222F', stroke: '#E5EADB', 'stroke-width': 4, 'paint-order': 'stroke' }, g, nodeName(c, true));
+    nodes[c] = { ring: ring, txt: txt, circ: circ, type: type };
+  });
+  mapState = { pos: pos, v: v, edges: edges, nodes: nodes, gV: gV, sprites: {}, W: W, H: H };
+  buildSprites();
+}
+function buildSprites() {
+  if (!mapState) return; mapState.gV.innerHTML = ''; mapState.sprites = {};
+  var codes = []; for (var i = 1; i <= P.nB; i++) codes.push('Vb' + i); for (i = 1; i <= P.nA; i++) codes.push('Va' + i);
+  codes.forEach(function (c) {
+    var bus = c[1] === 'b', g = el('g', {}, mapState.gV);
+    if (bus) {
+      el('rect', { x: -19, y: -10, width: 38, height: 20, rx: 6, fill: '#E39A2D', stroke: '#10222F', 'stroke-width': 1.8 }, g);
+      [-12, -3, 6].forEach(function (x) { el('rect', { x: x, y: -6, width: 7, height: 6, rx: 1.5, fill: '#FBFCF9' }, g); });
+      el('circle', { cx: -10, cy: 11, r: 3.2, fill: '#10222F' }, g); el('circle', { cx: 10, cy: 11, r: 3.2, fill: '#10222F' }, g);
+    } else {
+      el('path', { d: 'M-21 -3H21L14 10H-14Z', fill: '#2F86B8', stroke: '#10222F', 'stroke-width': 1.8, 'stroke-linejoin': 'round' }, g);
+      el('rect', { x: -8, y: -13, width: 16, height: 10, rx: 2.5, fill: '#FBFCF9', stroke: '#10222F', 'stroke-width': 1.5 }, g);
+    }
+    var badge = el('g', { transform: 'translate(19 -12)' }, g);
+    el('circle', { r: 10, fill: '#10222F' }, badge);
+    var bt = el('text', { x: 0, y: 4.5, 'text-anchor': 'middle', 'font-size': 12.5, 'font-weight': 700, fill: '#fff' }, badge, '0');
+    var nm = el('text', { x: 0, y: 25, 'text-anchor': 'middle', 'font-size': 11.5, 'font-weight': 650, fill: bus ? '#8A4F06' : '#17577E', stroke: '#FBFCF9', 'stroke-width': 3.5, 'paint-order': 'stroke' }, g, vehName(c));
+    mapState.sprites[c] = { g: g, badge: badge, bt: bt, idx: +c.slice(2) - 1, n: bus ? P.nB : P.nA, bus: bus };
+  });
+}
+var vehLegs = {}, peopleT = [];
+function prepSchedule(s) {
+  vehLegs = {};
+  s.legs.forEach(function (l) { (vehLegs[l.vehicle] = vehLegs[l.vehicle] || []).push(l); });
+  Object.keys(vehLegs).forEach(function (k) { vehLegs[k].sort(function (a, b) { return a.depart - b.depart || a.arrive - b.arrive; }); });
+  peopleT = s.people;
+  if (!mapState) return;
+  var cnt = {};
+  s.legs.forEach(function (l) { if (l.loaded) cnt[l.frm + '-' + l.to] = (cnt[l.frm + '-' + l.to] || 0) + 1; });
+  Object.keys(mapState.edges).forEach(function (k) { var c = cnt[k] || 0, e = mapState.edges[k].line; e.setAttribute('stroke-width', c ? 3 + c * 2.2 : 1.4); e.setAttribute('stroke-opacity', c ? .6 : .2); });
+}
+function vehPos(code, tt) {
+  var legs = vehLegs[code]; if (!legs || !legs.length) return null;
+  var pos = mapState.pos, i, l;
+  if (tt <= legs[0].depart) return { p: pos[legs[0].frm], load: 0, moving: false, node: legs[0].frm };
+  for (i = 0; i < legs.length; i++) {
+    l = legs[i];
+    if (tt >= l.depart && tt < l.arrive) { var f = (tt - l.depart) / Math.max(1e-9, l.arrive - l.depart), A = pos[l.frm], B = pos[l.to]; return { p: { x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f }, load: l.loaded ? l.riders.length : 0, moving: true }; }
+    if (i + 1 < legs.length && tt >= l.arrive && tt < legs[i + 1].depart) return { p: pos[l.to], load: 0, moving: false, node: l.to };
+  }
+  return { p: pos[legs[legs.length - 1].to], load: 0, moving: false, node: legs[legs.length - 1].to };
+}
+function updateMap(tt) {
+  if (!mapState || !cur) return;
+  var cnt = {}, k, pos = mapState.pos, n = peopleT.length;
+  Object.keys(pos).forEach(function (c) { cnt[c] = 0; });
+  peopleT.forEach(function (p) {
+    if (tt < p.depart_S) cnt[p.S]++; else if (tt >= p.arrive_D) cnt[p.D]++; else if (tt >= p.arrive_H && tt < p.depart_H) cnt[p.H]++;
+  });
+  var perS = { S1: 0, S2: 0, D1: 0, D2: 0 }; peopleT.forEach(function (p) { perS[p.S]++; });
+  Object.keys(mapState.nodes).forEach(function (c) {
+    var nd = mapState.nodes[c], v = cnt[c], tot = nd.type === 'H' ? Math.max(1, n / P.nH) : Math.max(1, perS[nd.type === 'S' ? c : 'S' + c.slice(1)]);
+    nd.txt.textContent = v; var fr = nd.type === 'H' ? Math.min(1, v / Math.max(1, P.cap)) : Math.min(1, v / tot);
+    nd.ring.setAttribute('stroke-dashoffset', nd.circ * (1 - fr));
+  });
+  Object.keys(mapState.sprites).forEach(function (c) {
+    var sp = mapState.sprites[c], r = vehPos(c, tt);
+    if (!r) { sp.g.setAttribute('display', 'none'); return; }
+    sp.g.removeAttribute('display');
+    var off = (sp.idx - (sp.n - 1) / 2) * 28, dx = 0, dy = off;
+    if (!r.moving) {
+      if (!mapState.v) { dx = sp.bus ? -48 : 48; dy = off * 0.7; }
+      else { var hubn = r.node && r.node[0] === 'H', up = hubn ? sp.bus : r.node && r.node[0] === 'D'; dx = off * 1.7; dy = hubn ? (sp.bus ? -76 : 50) : (r.node[0] === 'S' ? 52 : -52); }
+    } else if (mapState.v) { dx = off; dy = 0; }
+    sp.g.setAttribute('transform', 'translate(' + (r.p.x + dx) + ' ' + (r.p.y + dy) + ')');
+    sp.badge.setAttribute('display', r.load ? '' : 'none'); sp.bt.textContent = r.load;
+    sp.g.setAttribute('opacity', r.load ? 1 : 0.85);
+  });
+}
+
+/* ---------- gantt ---------- */
+var ganttCtx = null;
+function drawGantt(s) {
+  var svg = $('#gantt'); svg.innerHTML = '';
+  var codes = []; for (var i = 1; i <= P.nB; i++) codes.push('Vb' + i); for (i = 1; i <= P.nA; i++) codes.push('Va' + i);
+  var W = 900, L = 74, Rr = 16, rh = 34, top = 8, H = top + codes.length * rh + 34, tm = Math.max(1, s.makespan), sx = (W - L - Rr) / tm;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  var defs = el('defs', {}, svg);
+  var pat = el('pattern', { id: 'hb', width: 7, height: 7, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs); el('rect', { width: 7, height: 7, fill: '#F3F5F0' }, pat); el('line', { x1: 0, y1: 0, x2: 0, y2: 7, stroke: '#9FB0BC', 'stroke-width': 2.4 }, pat);
+  var cl = el('clipPath', { id: 'gc' }, defs); el('rect', { x: L, y: 0, width: W - L - Rr + 1, height: H }, cl);
+  var step = niceStep(tm, 9);
+  for (var t0 = 0; t0 <= tm + 0.01; t0 += step) { el('line', { x1: L + t0 * sx, x2: L + t0 * sx, y1: top, y2: top + codes.length * rh, stroke: '#E1E7DE' }, svg); el('text', { x: L + t0 * sx, y: top + codes.length * rh + 17, 'text-anchor': 'middle', 'font-size': 12.5, fill: '#46586A' }, svg, t0); }
+  el('text', { x: W - Rr, y: H - 3, 'text-anchor': 'end', 'font-size': 12.5, fill: '#46586A' }, svg, 'minutes');
+  codes.forEach(function (c, r) {
+    var y = top + r * rh, bus = c[1] === 'b';
+    el('rect', { x: 0, y: y + 4, width: 6, height: rh - 8, rx: 3, fill: bus ? '#E39A2D' : '#2F86B8' }, svg);
+    el('text', { x: 14, y: y + rh / 2 + 5, 'font-size': 14, 'font-weight': 650, fill: '#10222F' }, svg, vehName(c));
+    el('line', { x1: L, x2: W - Rr, y1: y + rh, y2: y + rh, stroke: '#E1E7DE' }, svg);
+    var g = el('g', { 'clip-path': 'url(#gc)' }, svg);
+    (vehLegs[c] || []).forEach(function (l) {
+      var x = L + l.depart * sx, w = Math.max(2, (l.arrive - l.depart) * sx);
+      var rr = el('rect', { x: x, y: y + 5, width: w, height: rh - 10, rx: 6, fill: l.loaded ? (bus ? '#E39A2D' : '#2F86B8') : 'url(#hb)', stroke: l.loaded ? '#10222F' : '#9FB0BC', 'stroke-width': l.loaded ? 1.5 : 1.2, tabindex: 0 }, g);
+      var tip = vehName(c) + ', trip ' + (l.trip + 1) + ': ' + nodeName(l.frm, true) + ' to ' + nodeName(l.to, true) + ', minute ' + l.depart + ' to ' + l.arrive + (l.loaded ? ', ' + l.riders.length + ' riders (' + l.riders.map(function (q) { return q + 1; }).join(', ') + ')' : ', empty');
+      el('title', {}, rr, tip);
+      if (l.loaded && w > 46) el('text', { x: x + w / 2, y: y + rh / 2 + 5, 'text-anchor': 'middle', 'font-size': 12.5, 'font-weight': 700, fill: bus ? '#10222F' : '#fff', 'pointer-events': 'none' }, g, (w > 78 ? nodeName(l.to, true) + ' ' : '') + 'x' + l.riders.length);
+    });
+  });
+  var ph = el('g', {}, svg); el('line', { x1: 0, x2: 0, y1: top - 4, y2: top + codes.length * rh, stroke: '#B03A5B', 'stroke-width': 2.5 }, ph); el('circle', { cx: 0, cy: top - 4, r: 5, fill: '#B03A5B' }, ph);
+  ganttCtx = { ph: ph, L: L, sx: sx };
+}
+function updateGantt(tt) { if (ganttCtx) ganttCtx.ph.setAttribute('transform', 'translate(' + (ganttCtx.L + Math.min(tt, tMax) * ganttCtx.sx) + ' 0)'); }
+
+/* ---------- table ---------- */
+function drawTable(s) {
+  var tb = $('#ptable'), h = '<thead><tr><th scope="col">Person</th><th scope="col">Pickup</th><th scope="col">Bus (trip)</th><th scope="col">Hub</th><th scope="col">Boat (trip)</th><th scope="col">Bus leaves</th><th scope="col">At hub</th><th scope="col">Boat leaves</th><th scope="col">Arrives</th></tr></thead><tbody>';
+  s.people.forEach(function (p) {
+    h += '<tr><th scope="row">' + personName(p.id) + '</th><td>' + nodeName(p.S, true) + '</td><td>' + vehName(p.beta) + ' (' + (p.beta_trip + 1) + ')</td><td>' + nodeName(p.H, true) + '</td><td>' + vehName(p.alpha) + ' (' + (p.alpha_trip + 1) + ')</td><td>' + p.depart_S + '</td><td>' + p.arrive_H + '</td><td>' + p.depart_H + '</td><td>' + p.arrive_D + '</td></tr>';
+  });
+  tb.innerHTML = h + '</tbody>';
+}
+
+/* ---------- apply a schedule ---------- */
+function setSchedule(s) {
+  cur = s; var keep = t;
+  prepSchedule(s); tMax = Math.max(1, s.makespan);
+  $('#scrub').max = tMax; if (keep > tMax) t = tMax;
+  drawGantt(s); drawBars($('#lab-bars'), s, { mode: { sum: 'sum', makespan: 'max', wait: 'wait', mix: 'mix' }[OBJ.kind] });
+  drawTable(s); frame(t);
+}
+function frame(tt) {
+  t = tt; $('#scrub').value = tt; $('#timelab').textContent = fmt(tt, 0) + ' of ' + tMax + ' min';
+  updateMap(tt); updateGantt(tt);
+}
+function renderAll() {
+  if (!cur) {
+    $('#gantt').innerHTML = ''; $('#lab-bars').innerHTML = ''; $('#ptable').innerHTML = '';
+    if (mapState) { mapState.gV.innerHTML = ''; }
+  }
+  renderScore(); renderStatus(); drawConv();
+}
+function setView(kind) {
+  curKind = kind;
+  if (kind === 'cpsat') setSchedule(SC); else if (latestBrowser) setSchedule(latestBrowser);
+  renderScore();
+}
+
+/* ---------- playback ---------- */
+function tick(ts) {
+  if (playing && cur) {
+    var dt = Math.min(0.1, (ts - lastTs) / 1000), speed = +$('#speed').value, rate = tMax / 18 * speed;
+    t += dt * rate; if (t > tMax + 1.5 * rate) t = 0; frame(Math.min(t, tMax));
+  }
+  lastTs = ts; requestAnimationFrame(tick);
+}
+function setPlaying(on) { playing = on; $('#b-play').textContent = on ? 'Pause' : 'Play'; $('#b-play').setAttribute('aria-pressed', on); }
+$('#b-play').addEventListener('click', function () { if (!playing && t >= tMax) t = 0; setPlaying(!playing); });
+$('#scrub').addEventListener('input', function (e) { setPlaying(false); frame(+e.target.value); });
+
+/* ---------- controls ---------- */
+function clampInt(v, a, b, d) { v = parseInt(v, 10); if (isNaN(v)) v = d; return Math.max(a, Math.min(b, v)); }
+function syncInputs() {
+  $('#c-n0').value = P.counts[0]; $('#c-n1').value = P.counts[1]; $('#c-nh').value = P.nH; $('#c-nb').value = P.nB; $('#c-na').value = P.nA;
+  $('#c-cap').value = P.cap; $('#c-r').value = P.R; $('#c-l').value = P.load; $('#c-fixed').checked = P.fixedHub;
+  buildMatrices();
+}
+function buildMatrices() {
+  var a = $('#m-sh'), b = $('#m-hd'), h, s, d, html = '<tr><th></th>';
+  for (h = 0; h < P.nH; h++) html += '<th scope="col">Hub ' + (h + 1) + '</th>'; html += '</tr>';
+  for (s = 0; s < 2; s++) { html += '<tr><th scope="row">' + PSHORT[s] + '</th>'; for (h = 0; h < P.nH; h++) html += '<td><input type="number" min="1" max="60" data-m="sh" data-i="' + s + '" data-j="' + h + '" value="' + P.dSH[s][h] + '" aria-label="Bus minutes, ' + PNAME[s] + ' to Transfer Hub ' + (h + 1) + '"></td>'; html += '</tr>'; }
+  a.innerHTML = html; html = '<tr><th></th>';
+  for (d = 0; d < 2; d++) html += '<th scope="col">' + DSHORT[d] + '</th>'; html += '</tr>';
+  for (h = 0; h < P.nH; h++) { html += '<tr><th scope="row">Hub ' + (h + 1) + '</th>'; for (d = 0; d < 2; d++) html += '<td><input type="number" min="1" max="60" data-m="hd" data-i="' + h + '" data-j="' + d + '" value="' + P.dHD[h][d] + '" aria-label="Boat minutes, Transfer Hub ' + (h + 1) + ' to ' + DNAME[d] + '"></td>'; html += '</tr>'; }
+  b.innerHTML = html;
+}
+function readInputs(e) {
+  var nh = clampInt($('#c-nh').value, 2, 4, P.nH);
+  while (P.dHD.length < nh) { P.dHD.push([8, 8]); P.dSH[0].push(8); P.dSH[1].push(8); }
+  while (P.dHD.length > nh) { P.dHD.pop(); P.dSH[0].pop(); P.dSH[1].pop(); }
+  var rebuild = nh !== P.nH; P.nH = nh;
+  P.counts = [clampInt($('#c-n0').value, 0, 20, 9), clampInt($('#c-n1').value, 0, 20, 9)];
+  P.nB = clampInt($('#c-nb').value, 1, 4, 2); P.nA = clampInt($('#c-na').value, 1, 4, 2);
+  P.cap = clampInt($('#c-cap').value, 1, 8, 3); P.R = clampInt($('#c-r').value, 1, 6, 3); P.load = clampInt($('#c-l').value, 0, 5, 0);
+  P.fixedHub = $('#c-fixed').checked;
+  if (e && e.target && e.target.dataset && e.target.dataset.m) {
+    var q = e.target.dataset, v = clampInt(e.target.value, 1, 60, 8);
+    if (q.m === 'sh') P.dSH[+q.i][+q.j] = v; else P.dHD[+q.i][+q.j] = v;
+  }
+  if (rebuild) buildMatrices();
+  afterParamChange();
+}
+function afterParamChange() { buildMap(); if (cur && curKind === 'cpsat' && !isPresetInstance()) { curKind = 'browser'; $('input[name=view][value=browser]').checked = true; } scheduleRestart(); renderScore(); }
+$('#controls').addEventListener('input', function (e) {
+  if (e.target.id === 'c-seed' || e.target.name === 'obj' || e.target.id === 'c-lam' || e.target.id === 'c-eff' || e.target.id === 'c-pace') return;
+  readInputs(e);
+});
+$('#controls').addEventListener('change', function (e) {
+  if (e.target.name === 'obj' || e.target.id === 'c-lam') {
+    OBJ.kind = $('input[name=obj]:checked').value; OBJ.lambda = +$('#c-lam').value; $('#o-lam').textContent = OBJ.lambda;
+    $('#f-lam').hidden = OBJ.kind !== 'mix'; scheduleRestart(); renderScore();
+  } else if (e.target.id === 'c-eff' || e.target.id === 'c-pace') scheduleRestart();
+});
+$('#c-lam').addEventListener('input', function () { $('#o-lam').textContent = $('#c-lam').value; OBJ.lambda = +$('#c-lam').value; });
+$('#b-preset').addEventListener('click', function () { P = JSON.parse(JSON.stringify(PRESET)); $('#c-seed').value = 8; syncInputs(); afterParamChange(); });
+$('#b-rand').addEventListener('click', function () {
+  var seed = clampInt($('#c-seed').value, 0, 99999, 8), r = VRP.randomRoutes(P.nH, seed); P.dSH = r.dSH; P.dHD = r.dHD;
+  $('#c-seed').value = (seed + 1) % 100000; syncInputs(); afterParamChange();
+});
+$('#b-run').addEventListener('click', function () { clearTimeout(restartTimer); restartTimer = null; restart(); });
+$('#b-stop').addEventListener('click', function () { if (engine) engine.send({ cmd: 'stop' }); });
+$$('input[name=view]').forEach(function (r) { r.addEventListener('change', function () { setView(r.value); }); });
+document.addEventListener('visibilitychange', function () { if (document.hidden && playing) setPlaying(false); });
+var rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(function () { var was = mapState && mapState.v; var nv = $('#mapwrap').clientWidth < 620; if (was !== nv) { buildMap(); if (cur) { prepSchedule(cur); frame(t); } } }, 150); });
+
+/* ---------- cross-check table ---------- */
+function drawX() {
+  var tb = $('#xtab'); if (!REF) return;
+  var rows = [['Sum of arrival times (repo objective)', 'sum', 0], ['Last arrival', 'makespan', 0], ['Average hub wait', 'wait', 2], ['Last arrival + 0.5 x hub wait', 'mix', 2]];
+  var h = '<thead><tr><th scope="col">Objective, repo instance (18 people)</th><th scope="col" class="num">CP-SAT</th><th scope="col">CP-SAT status</th><th scope="col" class="num">Browser, best of ' + REF.browser.runs + ' runs</th><th scope="col" class="num">Browser, runs reaching it</th></tr></thead><tbody>';
+  rows.forEach(function (r) {
+    var c = REF.cpsat[r[1]], b = REF.browser[r[1]]; if (!c || !b) return;
+    var st = c.status === 'OPTIMAL' ? 'proven optimal in ' + fmt(c.secs, 0) + ' s' : 'feasible after ' + fmt(c.secs, 0) + ' s, bound ' + fmt(c.bound, r[2]);
+    h += '<tr><th scope="row">' + r[0] + '</th><td class="num">' + fmt(c.value, r[2]) + '</td><td>' + st + '</td><td class="num ' + (b.best <= c.value + 1e-6 ? 'good' : '') + '">' + fmt(b.best, r[2]) + '</td><td class="num">' + b.hits + ' of ' + REF.browser.runs + '</td></tr>';
+  });
+  tb.innerHTML = h + '</tbody>';
+  var f = REF.free, fx = '';
+  if (f) fx = '<b>Hubs left free</b> (the planner chooses them, a less restricted problem than the notebook): after ' + fmt(f.cpsat.sum.secs, 0) + ' s CP-SAT holds ' + fmt(f.cpsat.sum.value, 0) + ' for the sum, with a lower bound of only ' + fmt(f.cpsat.sum.bound, 0) + ', so it is not proven. The browser planner reaches ' + fmt(f.browser.sum.best, 0) + ' (mean ' + fmt(f.browser.sum.mean, 1) + ' over ' + REF.browser.runs + ' runs of ' + fmt(REF.ms / 1000, 0) + ' s). For last arrival both reach ' + fmt(f.cpsat.makespan.value, 0) + ' (CP-SAT bound ' + fmt(f.cpsat.makespan.bound, 0) + '). ';
+  $('#xnote').innerHTML = fx + '<br><b>Speed-ups tried:</b> a tighter time horizon and symmetry breaking are available as options in <code>planck_optimiser.py</code> but did not make the 18-person sum solve faster here (about 17 to 30 s as before, 23 s with the horizon, 38 to 56 s with symmetry breaking on a 2-core machine), so they are off by default.';
+}
+
+/* ---------- boot ---------- */
+syncInputs();
+if (window.matchMedia('(max-width:700px)').matches) { $$('.controls details').forEach(function (d, i) { if (i > 1) d.open = false; }); }
+buildMap(); drawX();
+setSchedule(SC); curKind = 'cpsat'; $('input[name=view][value=cpsat]').checked = true;
+curKind = 'browser';  /* browser results replace the CP-SAT preview within milliseconds */
+$('input[name=view][value=browser]').checked = true;
+renderScore(); restart();
+if (!reduce) setPlaying(true);
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
